@@ -4,7 +4,7 @@ struct ContentView: View {
     @EnvironmentObject var sessionManager: WatchSessionManager
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Group {
                 if sessionManager.pendingEvents.isEmpty {
                     emptyState
@@ -12,7 +12,7 @@ struct ContentView: View {
                     eventList
                 }
             }
-            .navigationTitle("Open Island")
+            .navigationTitle("Orbit")
         }
     }
 
@@ -21,7 +21,6 @@ struct ContentView: View {
             Image(systemName: "applewatch.radiowaves.left.and.right")
                 .font(.system(size: 40))
                 .foregroundStyle(.blue)
-                .symbolEffect(.pulse, isActive: !sessionManager.isPhoneReachable)
 
             Text("一切就绪")
                 .font(.headline)

@@ -104,9 +104,11 @@ deployment.
 - iPhone + Watch simulator build: PASS after correcting the Watch marketing
   icon slot. Both `OpenIslandMobile.app` and `OpenIslandWatch.app` were
   produced.
-- Generic physical-device build with automatic provisioning: PASS. Physical
-  installation and WatchConnectivity traversal still require the paired
-  iPhone/Watch to be online and unlocked.
+- Generic physical-device build with automatic provisioning: PASS. Orbit was
+  installed and launched on Austin's connected iPhone. The paired Series 3
+  Watch runs watchOS 8.8.2, so the Watch UI was made watchOS 8 compatible and
+  the rebuilt companion was embedded in the installed iPhone app. Direct
+  WatchConnectivity traversal still requires the Watch to become available.
 - Mac package: PASS from a non-FileProvider package root. The packager now
   strips copied extended attributes before signing and falls back to
   `hdiutil` when optional `create-dmg` is unavailable.
@@ -125,8 +127,9 @@ deployment.
 
 | Gate-clearance artifact | SHA-256 |
 |---|---|
-| `ios/OpenIslandMobile.xcodeproj/project.pbxproj` | `f424e63db4db234d3586c1c3a1e5244ba229f5a9db86b15e6a76383b41bfbe6a` |
+| `ios/OpenIslandMobile.xcodeproj/project.pbxproj` | `45e4ffd65b8b92ab74c44b04ea54a8358b248c51da798298d17aec9a941c4bd0` |
 | `ios/OpenIslandWatch/Assets.xcassets/AppIcon.appiconset/Contents.json` | `5736c633bfb01f72a774684e2f0bc5f99319bd0396d95522cb897405358995e5` |
+| `ios/OpenIslandWatch/ContentView.swift` | `2f237513ab571991ef838c0c273646034dd7d1ff2e50f7a5ad72fb02f8a74251` |
 | `scripts/package-app.sh` | `10e25ec208a78be4f1d505a928b15f099e6ca9f80d55e017b9567015700b7500` |
 | Signed local `Orbit.zip` | `727625613692fceb13284213f58857149f64c32af2c496929a82bc495f907382` |
 | Signed local `Orbit.dmg` | `081a3e4230ff5dc66457b6cfe61fb155be18ce84ab8fa902b3161f4bbc3a55b5` |
