@@ -18,7 +18,7 @@ struct ContentView: View {
             .refreshable {
                 await refreshStatus()
             }
-            .navigationTitle("Open Island")
+            .navigationTitle("Orbit")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
@@ -81,7 +81,7 @@ struct ContentView: View {
     private var connectionActionButton: some View {
         switch connectionManager.state {
         case .disconnected:
-            Button("连接") {
+            Button("Connect") {
                 connectionManager.startDiscovery()
             }
             .buttonStyle(.borderedProminent)
@@ -111,11 +111,11 @@ struct ContentView: View {
                     .font(.system(size: 36))
                     .foregroundStyle(.tertiary)
 
-                Text("暂无事件")
+                Text("No events yet")
                     .font(.headline)
                     .foregroundStyle(.secondary)
 
-                Text("当 AI Agent 需要权限批准、回答问题或完成任务时，事件会显示在这里。")
+                Text("Approval requests, questions, and completed agent tasks will appear here.")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
@@ -159,7 +159,7 @@ struct ContentView: View {
                         .lineLimit(1)
 
                     if event.isResolved {
-                        Text("已处理")
+                Text("Resolved")
                             .font(.caption2)
                             .foregroundStyle(.green)
                             .padding(.horizontal, 6)
@@ -238,14 +238,14 @@ struct ContentView: View {
         return sortedKeys.map { key in
             let label: String
             switch key {
-            case "today": label = "今天"
-            case "yesterday": label = "昨天"
+            case "today": label = "Today"
+            case "yesterday": label = "Yesterday"
             default:
                 let formatter = DateFormatter()
                 formatter.dateFormat = "yyyy-MM-dd"
                 if let date = formatter.date(from: key) {
                     let display = DateFormatter()
-                    display.dateFormat = "M月d日"
+                    display.dateFormat = "MMM d"
                     label = display.string(from: date)
                 } else {
                     label = key

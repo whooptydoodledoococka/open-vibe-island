@@ -20,7 +20,7 @@ struct EventDetailView: View {
             metadataSection
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("事件详情")
+        .navigationTitle("Event Details")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -59,7 +59,7 @@ struct EventDetailView: View {
                         .background(event.iconColor.opacity(0.1), in: Capsule())
 
                     if event.isResolved {
-                        Text("已处理")
+                    Text("Resolved")
                             .font(.caption)
                             .foregroundStyle(.green)
                             .padding(.horizontal, 8)
@@ -79,14 +79,14 @@ struct EventDetailView: View {
     private var detailSection: some View {
         switch event.kind {
         case let .permissionRequested(title, summary, _, primaryAction, secondaryAction):
-            Section("权限请求") {
-                LabeledContent("操作", value: title)
-                LabeledContent("摘要", value: summary)
+            Section("Approval Request") {
+                LabeledContent("Action", value: title)
+                LabeledContent("Summary", value: summary)
                 if let dir = event.workingDirectory {
-                    LabeledContent("工作目录", value: dir)
+                    LabeledContent("Working Directory", value: dir)
                 }
                 HStack {
-                    Text("可选操作")
+                    Text("Available Actions")
                     Spacer()
                     Text(primaryAction)
                         .foregroundStyle(.green)
@@ -98,12 +98,12 @@ struct EventDetailView: View {
             }
 
         case let .questionAsked(title, options, _):
-            Section("问题") {
+            Section("Question") {
                 Text(title)
                     .font(.body)
             }
             if !options.isEmpty {
-                Section("选项") {
+                Section("Options") {
                     ForEach(Array(options.enumerated()), id: \.offset) { _, option in
                         Text(option)
                     }
@@ -111,7 +111,7 @@ struct EventDetailView: View {
             }
 
         case let .sessionCompleted(summary):
-            Section("完成摘要") {
+            Section("Completion Summary") {
                 Text(summary)
                     .font(.body)
             }
@@ -150,7 +150,7 @@ struct EventDetailView: View {
                 EmptyView()
             }
         } header: {
-            Text("操作")
+            Text("Actions")
         }
     }
 
@@ -158,15 +158,15 @@ struct EventDetailView: View {
 
     @ViewBuilder
     private var resolutionSection: some View {
-        Section("处理结果") {
+        Section("Resolution") {
             if let action = event.resolvedAction {
-                LabeledContent("操作", value: action)
+                LabeledContent("Action", value: action)
             }
             if let resolvedAt = event.resolvedAt {
-                LabeledContent("处理时间") {
+                LabeledContent("Resolved") {
                     Text(resolvedAt, style: .relative)
                         .foregroundStyle(.secondary)
-                    + Text(" 前")
+                    + Text(" ago")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -177,14 +177,14 @@ struct EventDetailView: View {
 
     @ViewBuilder
     private var metadataSection: some View {
-        Section("详细信息") {
+        Section("Details") {
             LabeledContent("Session ID") {
                 Text(event.sessionID)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            LabeledContent("时间") {
+            LabeledContent("Time") {
                 Text(event.timestamp, format: .dateTime)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -196,9 +196,9 @@ struct EventDetailView: View {
 
     private var eventTypeLabel: String {
         switch event.kind {
-        case .permissionRequested: return "权限请求"
-        case .questionAsked: return "问题"
-        case .sessionCompleted: return "任务完成"
+        case .permissionRequested: return "Approval Request"
+        case .questionAsked: return "Question"
+        case .sessionCompleted: return "Task Completed"
         }
     }
 

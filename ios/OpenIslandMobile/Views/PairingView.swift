@@ -23,11 +23,11 @@ struct PairingView: View {
                     codeInputView
                 }
             }
-            .navigationTitle("配对 Mac")
+        .navigationTitle("Pair with Mac")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") {
+                    Button("Cancel") {
                         connectionManager.discovery.stopBrowsing()
                         dismiss()
                     }
@@ -49,14 +49,14 @@ struct PairingView: View {
                     HStack {
                         ProgressView()
                             .padding(.trailing, 8)
-                        Text("正在搜索局域网中的 Mac...")
+                Text("Searching for Orbit on your local network…")
                             .foregroundStyle(.secondary)
                     }
                 }
             }
 
             if !connectionManager.discovery.discoveredMacs.isEmpty {
-                Section("发现的 Mac") {
+            Section("Available Macs") {
                     ForEach(connectionManager.discovery.discoveredMacs) { mac in
                         Button {
                             selectedMac = mac
@@ -89,15 +89,15 @@ struct PairingView: View {
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
 
-                        Text("未发现 Mac")
+                    Text("No Mac Found")
                             .font(.headline)
 
-                        Text("请确保 Mac 上的 Open Island 正在运行，且 Mac 和 iPhone 在同一 WiFi 网络下。")
+                    Text("Make sure Orbit is running on your Mac and both devices are on the same Wi-Fi network.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
 
-                        Button("重新搜索") {
+                    Button("Search Again") {
                             connectionManager.discovery.startBrowsing()
                         }
                         .buttonStyle(.bordered)
@@ -115,7 +115,7 @@ struct PairingView: View {
                         Image(systemName: "keyboard")
                             .foregroundStyle(.orange)
                             .frame(width: 32)
-                        Text("手动输入 IP 地址")
+                    Text("Enter IP Address Manually")
                     }
                 }
             }
@@ -131,11 +131,11 @@ struct PairingView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("IP 地址", text: $manualHost)
+                    TextField("IP Address", text: $manualHost)
                         .keyboardType(.decimalPad)
-                    TextField("端口", text: $manualPort)
+                    TextField("Port", text: $manualPort)
                         .keyboardType(.numberPad)
-                    TextField("4 位配对码", text: $manualCode)
+                    TextField("4-Digit Pairing Code", text: $manualCode)
                         .keyboardType(.numberPad)
                         .onChange(of: manualCode) { _, newValue in
                             let filtered = String(newValue.filter(\.isNumber).prefix(4))
@@ -144,7 +144,7 @@ struct PairingView: View {
                             }
                         }
                 } footer: {
-                    Text("Bonjour 无法发现时（如热点、AP 隔离），可手动输入 Mac 的 IP 和端口。")
+                Text("If Bonjour discovery is unavailable, enter your Mac's IP address and port manually.")
                 }
 
                 if let manualError {
@@ -166,18 +166,18 @@ struct PairingView: View {
                                 Spacer()
                             }
                         } else {
-                            Text("连接并配对")
+                        Text("Connect and Pair")
                                 .frame(maxWidth: .infinity)
                         }
                     }
                     .disabled(manualHost.isEmpty || manualCode.count != 4 || isManualPairing)
                 }
             }
-            .navigationTitle("手动连接")
+            .navigationTitle("Manual Connection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") {
+                    Button("Cancel") {
                         showManualEntry = false
                     }
                 }
@@ -189,7 +189,7 @@ struct PairingView: View {
 
     private func performManualPairing() {
         guard let port = UInt16(manualPort) else {
-            manualError = "端口格式无效"
+            manualError = "Enter a valid port number."
             return
         }
         isManualPairing = true
@@ -223,7 +223,7 @@ struct PairingView: View {
             }
 
             VStack(spacing: 12) {
-                Text("请输入 Mac 上显示的 4 位配对码")
+            Text("Enter the 4-digit pairing code shown on your Mac")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -255,7 +255,7 @@ struct PairingView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                 } else {
-                    Text("配对")
+                Text("Pair")
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -263,7 +263,7 @@ struct PairingView: View {
             .disabled(pairingCode.count != 4 || isPairing)
             .padding(.horizontal, 40)
 
-            Button("选择其他 Mac") {
+            Button("Choose Another Mac") {
                 selectedMac = nil
                 pairingCode = ""
                 errorMessage = nil

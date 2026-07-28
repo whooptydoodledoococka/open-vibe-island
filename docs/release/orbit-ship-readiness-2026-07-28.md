@@ -116,6 +116,11 @@ deployment.
   `com.austinwise.orbit` and Team ID `RL574WT5NJ`. The signed app was
   installed at `/Applications/Orbit.app` and launched successfully.
 - Regression: `scripts/harness.sh ci` PASS after these changes.
+- Phone/Watch language correction: all hard-coded user-facing Han-script
+  strings were replaced with concise English Orbit copy across connection,
+  pairing, event detail, settings, errors, dates, and Watch status. A literal
+  source audit reports `USER_FACING_HAN_STRINGS_NONE`; the signed device build,
+  reinstall, and relaunch on Austin's iPhone all pass.
 - Hermes authentication remains human-held: the opened WebUI rejected the
   attempted password. No credential, cookie, or token was read. Exact
   8642/8787 ID correlation remains HOLD until normal WebUI authentication.

@@ -9,7 +9,7 @@ struct SettingsView: View {
             deviceSection
             dangerSection
         }
-        .navigationTitle("设置")
+        .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -17,30 +17,30 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var notificationSettingsSection: some View {
-        Section("通知类型") {
+        Section("Notification Types") {
             Toggle(isOn: $connectionManager.notifyPermissions) {
-                Label("权限请求", systemImage: "lock.shield")
+                Label("Approval Requests", systemImage: "lock.shield")
             }
             Toggle(isOn: $connectionManager.notifyQuestions) {
-                Label("问题", systemImage: "questionmark.bubble")
+                Label("Questions", systemImage: "questionmark.bubble")
             }
             Toggle(isOn: $connectionManager.notifyCompletions) {
-                Label("完成通知", systemImage: "checkmark.circle")
+                Label("Task Completions", systemImage: "checkmark.circle")
             }
         }
 
         Section {
             Toggle(isOn: $connectionManager.silentCompletions) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("静默模式")
-                    Text("完成通知不发出声音")
+                    Text("Quiet Mode")
+                    Text("Deliver completion notifications without sound")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
             .disabled(!connectionManager.notifyCompletions)
         } header: {
-            Text("声音")
+                    Text("Sound")
         }
     }
 
@@ -48,7 +48,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var deviceSection: some View {
-        Section("已配对设备") {
+        Section("Paired Device") {
             if let macName = connectionManager.connectedMacName {
                 HStack {
                     Label {
@@ -56,7 +56,7 @@ struct SettingsView: View {
                             Text(macName)
                                 .font(.body)
                             if let pairedAt = connectionManager.pairedAt {
-                                Text("配对时间: \(pairedAt, style: .date)")
+                        Text("Paired: \(pairedAt, style: .date)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -74,7 +74,7 @@ struct SettingsView: View {
                 HStack {
                     Image(systemName: "desktopcomputer")
                         .foregroundStyle(.secondary)
-                    Text("未配对")
+                Text("Not Paired")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -89,7 +89,7 @@ struct SettingsView: View {
                 Circle()
                     .fill(.green)
                     .frame(width: 7, height: 7)
-                Text("已连接")
+                Text("Connected")
                     .font(.caption)
                     .foregroundStyle(.green)
             }
@@ -97,7 +97,7 @@ struct SettingsView: View {
             HStack(spacing: 4) {
                 ProgressView()
                     .controlSize(.mini)
-                Text("连接中")
+                Text("Connecting")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -105,7 +105,7 @@ struct SettingsView: View {
             HStack(spacing: 4) {
                 ProgressView()
                     .controlSize(.mini)
-                Text("搜索中")
+                Text("Searching")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -114,7 +114,7 @@ struct SettingsView: View {
                 Circle()
                     .fill(.red)
                     .frame(width: 7, height: 7)
-                Text("离线")
+                Text("Offline")
                     .font(.caption)
                     .foregroundStyle(.red)
             }
@@ -130,14 +130,14 @@ struct SettingsView: View {
                 Button(role: .destructive) {
                     connectionManager.disconnect()
                 } label: {
-                    Label("断开连接并取消配对", systemImage: "xmark.circle")
+                Label("Disconnect and Unpair", systemImage: "xmark.circle")
                 }
             }
 
             Button {
                 connectionManager.startDiscovery()
             } label: {
-                Label("重新搜索 Mac", systemImage: "arrow.clockwise")
+                Label("Search for Mac Again", systemImage: "arrow.clockwise")
             }
         }
     }

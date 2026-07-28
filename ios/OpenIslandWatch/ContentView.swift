@@ -22,10 +22,10 @@ struct ContentView: View {
                 .font(.system(size: 40))
                 .foregroundStyle(.blue)
 
-            Text("一切就绪")
+            Text("All Set")
                 .font(.headline)
 
-            Text(sessionManager.isPhoneReachable ? "iPhone 已连接" : "iPhone 未连接")
+            Text(sessionManager.isPhoneReachable ? "iPhone Connected" : "iPhone Offline")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
