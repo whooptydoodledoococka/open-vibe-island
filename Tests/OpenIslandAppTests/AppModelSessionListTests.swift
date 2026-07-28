@@ -1438,6 +1438,38 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    @MainActor
+    func externalObservationIngressEnforcesOneOwnerAndEmergencyStop() throws {
+        let model = AppModel()
+        let now = Date(timeIntervalSince1970: 1_000)
+        let data = Data("[{\"id\":\"session_1\",\"updated\":1000000}]".utf8)
+
+        let report = try model.ingestExternalObservation(
+            feed: .openCode,
+            data: data,
+            ownerID: "orbit-owner",
+            now: now
+        ).get()
+        #expect(report.observations.count == 1)
+        #expect(model.orderedExternalObservationReports == [report])
+
+        #expect(model.ingestExternalObservation(
+            feed: .openCode,
+            data: data,
+            ownerID: "second-owner",
+            now: now.addingTimeInterval(1)
+        ) == .failure(.ownerConflict))
+
+        model.emergencyStopExternalObservation()
+        #expect(model.ingestExternalObservation(
+            feed: .openCode,
+            data: data,
+            ownerID: "orbit-owner",
+            now: now.addingTimeInterval(2)
+        ) == .failure(.stopped))
+    }
+
+    @Test
     func recoveredSessionMatchesLiveGhosttyProcessByCWDWhenMultipleCandidatesExist() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

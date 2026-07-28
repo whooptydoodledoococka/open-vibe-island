@@ -57,7 +57,8 @@ final class AppModel {
     private(set) var receiptLedger = OrbitReceiptLedger()
     private(set) var contextEvidenceLedger = OrbitContextEvidenceLedger()
     private(set) var efficiencyTelemetryLedger = OrbitEfficiencyTelemetryLedger()
-    private(set) var externalObservationReports: [OrbitExternalFeedKind: OrbitExternalObservationReport] = [:]
+    private(set) var externalObservationHost = OrbitExternalObservationHost()
+    @ObservationIgnored private var debugExternalObservationReports: [OrbitExternalFeedKind: OrbitExternalObservationReport] = [:]
     var hermesGatewaySnapshot = HermesGatewaySnapshot(
         gateway: .unavailable,
         sessions: .unavailable,
@@ -100,11 +101,28 @@ final class AppModel {
     }
 
     var orderedExternalObservationReports: [OrbitExternalObservationReport] {
-        OrbitExternalFeedKind.allCases.compactMap { externalObservationReports[$0] }
+        let reports = externalObservationHost.reports.isEmpty
+            ? debugExternalObservationReports
+            : externalObservationHost.reports
+        return OrbitExternalFeedKind.allCases.compactMap { reports[$0] }
     }
 
-    func recordExternalObservationReport(_ report: OrbitExternalObservationReport) {
-        externalObservationReports[report.feed] = report
+    func ingestExternalObservation(
+        feed: OrbitExternalFeedKind,
+        data: Data,
+        ownerID: String,
+        now: Date = .now
+    ) -> Result<OrbitExternalObservationReport, OrbitExternalObservationIngressError> {
+        externalObservationHost.ingest(
+            feed: feed,
+            data: data,
+            ownerID: ownerID,
+            now: now
+        )
+    }
+
+    func emergencyStopExternalObservation() {
+        externalObservationHost.emergencyStop()
     }
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
@@ -1377,7 +1395,8 @@ final class AppModel {
         for telemetry in snapshot.efficiencyTelemetry {
             efficiencyTelemetryLedger.append(telemetry)
         }
-        externalObservationReports = Dictionary(
+        externalObservationHost = OrbitExternalObservationHost()
+        debugExternalObservationReports = Dictionary(
             uniqueKeysWithValues: snapshot.externalObservationReports.map { ($0.feed, $0) }
         )
         if let hermesGatewaySnapshot = snapshot.hermesGatewaySnapshot {
