@@ -57,6 +57,7 @@ final class AppModel {
     private(set) var receiptLedger = OrbitReceiptLedger()
     private(set) var contextEvidenceLedger = OrbitContextEvidenceLedger()
     private(set) var efficiencyTelemetryLedger = OrbitEfficiencyTelemetryLedger()
+    private(set) var externalObservationReports: [OrbitExternalFeedKind: OrbitExternalObservationReport] = [:]
     var hermesGatewaySnapshot = HermesGatewaySnapshot(
         gateway: .unavailable,
         sessions: .unavailable,
@@ -96,6 +97,14 @@ final class AppModel {
 
     func redactedEfficiencyExport(sessionID: String, taskID: String? = nil) throws -> Data {
         try efficiencyTelemetryLedger.redactedExport(sessionID: sessionID, taskID: taskID)
+    }
+
+    var orderedExternalObservationReports: [OrbitExternalObservationReport] {
+        OrbitExternalFeedKind.allCases.compactMap { externalObservationReports[$0] }
+    }
+
+    func recordExternalObservationReport(_ report: OrbitExternalObservationReport) {
+        externalObservationReports[report.feed] = report
     }
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
@@ -1368,6 +1377,9 @@ final class AppModel {
         for telemetry in snapshot.efficiencyTelemetry {
             efficiencyTelemetryLedger.append(telemetry)
         }
+        externalObservationReports = Dictionary(
+            uniqueKeysWithValues: snapshot.externalObservationReports.map { ($0.feed, $0) }
+        )
         if let hermesGatewaySnapshot = snapshot.hermesGatewaySnapshot {
             self.hermesGatewaySnapshot = hermesGatewaySnapshot
         }

@@ -34,4 +34,15 @@ struct IslandDebugScenarioTests {
         #expect(snapshot.efficiencyTelemetry.count == 1)
         #expect(snapshot.efficiencyTelemetry.first?.sessionID == snapshot.selectedSessionID)
     }
+
+    @Test
+    func externalFeedScenarioKeepsOpenCodeLiveAndFreeBuffStaleInspectionOnly() {
+        let snapshot = IslandDebugScenario.externalFeeds.snapshot()
+        let reports = Dictionary(uniqueKeysWithValues: snapshot.externalObservationReports.map { ($0.feed, $0) })
+
+        #expect(reports[.openCode]?.surfaceState == .liveInspectionOnly)
+        #expect(reports[.openCode]?.observations.count == 1)
+        #expect(reports[.freeBuff]?.surfaceState == .staleInspectionOnly)
+        #expect(reports[.freeBuff]?.observations.isEmpty == true)
+    }
 }

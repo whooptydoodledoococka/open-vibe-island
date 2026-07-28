@@ -356,6 +356,22 @@ def main() -> None:
         if any("$" in value for value in context_status_values):
             fail("contextPressure contains an unsupported dollar claim")
 
+    elif scenario == "externalFeeds":
+        if notch_status != "opened" or island_surface != "sessionList":
+            fail(f"expected opened sessionList for externalFeeds, got {notch_status!r} / {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(360, 560),
+            context="externalFeeds overlay frame",
+        )
+        external_evidence = labels | text_values
+        assert_contains_any(external_evidence, ["OpenCode 1 live"], "externalFeeds OpenCode evidence")
+        assert_contains_any(external_evidence, ["FreeBuff stale"], "externalFeeds FreeBuff evidence")
+        assert_contains_any(external_evidence, ["Inspection only"], "externalFeeds authority evidence")
+        if any("PRIVATE" in value or "/private" in value for value in external_evidence):
+            fail("externalFeeds leaked private source payload")
+
     else:
         fail(f"unsupported scenario {scenario!r}")
 

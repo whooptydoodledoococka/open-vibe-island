@@ -15,6 +15,7 @@ struct IslandDebugSnapshot {
     var receipts: [OrbitReceipt] = []
     var contextEvidence: [OrbitContextEvidence] = []
     var efficiencyTelemetry: [OrbitEfficiencyTelemetry] = []
+    var externalObservationReports: [OrbitExternalObservationReport] = []
 }
 
 enum IslandDebugScenario: String, CaseIterable, Identifiable {
@@ -29,6 +30,7 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case multipleRequests
     case receiptDelivered
     case contextPressure
+    case externalFeeds
 
     var id: String { rawValue }
 
@@ -56,6 +58,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Delivered Receipt"
         case .contextPressure:
             "Context Pressure"
+        case .externalFeeds:
+            "External Feed Status"
         }
     }
 
@@ -83,6 +87,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Adapter delivery remains visibly distinct from source acknowledgement."
         case .contextPressure:
             "Metadata-only context headroom, savings, cache, freshness, and confidence."
+        case .externalFeeds:
+            "OpenCode and FreeBuff remain bounded, read-only, and inspection-only."
         }
     }
 
@@ -301,6 +307,32 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 selectedSessionID: sessions[0].id,
                 contextEvidence: [evidence],
                 efficiencyTelemetry: [telemetry]
+            )
+
+        case .externalFeeds:
+            let sessions = DebugSessionFactory.listSessions(now: now)
+            let updatedMilliseconds = Int64(now.timeIntervalSince1970 * 1_000)
+            let openCodeData = Data("[{\"id\":\"oc_fixture\",\"updated\":\(updatedMilliseconds)}]".utf8)
+            let staleDate = ISO8601DateFormatter().string(from: now.addingTimeInterval(-120))
+            let freeBuffData = Data("{\"agent\":\"freebuff\",\"updated_at\":\"\(staleDate)\"}".utf8)
+            let openCode = try? OrbitExternalSessionObservationParser.parseOpenCodeJSON(
+                openCodeData,
+                now: now
+            ).get()
+            let freeBuff = try? OrbitExternalSessionObservationParser.parseFreeBuffManifest(
+                freeBuffData,
+                now: now
+            ).get()
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 480,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions[0].id,
+                externalObservationReports: [openCode, freeBuff].compactMap { $0 }
             )
         }
     }

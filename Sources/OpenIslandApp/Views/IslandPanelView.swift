@@ -455,6 +455,11 @@ struct IslandPanelView: View {
                         .padding(.horizontal, 18)
                 }
 
+                if !model.orderedExternalObservationReports.isEmpty {
+                    externalObservationEvidenceStrip(model.orderedExternalObservationReports)
+                        .padding(.horizontal, 18)
+                }
+
                 if !model.hasAnyInstalledAgent {
                     installHooksHint
                         .padding(.horizontal, 18)
@@ -571,6 +576,58 @@ struct IslandPanelView: View {
         case .stale, .unavailable:
             V6Palette.paper.opacity(0.46)
         }
+    }
+
+    private func externalObservationEvidenceStrip(
+        _ reports: [OrbitExternalObservationReport]
+    ) -> some View {
+        let containsDegraded = reports.contains { $0.surfaceState != .liveInspectionOnly }
+        let tint = containsDegraded
+            ? IslandDesignPalette.Status.waitingForAnswer
+            : IslandDesignPalette.Status.completed
+        let summary = reports.map { report in
+            let name = report.feed == .openCode ? "OpenCode" : "FreeBuff"
+            switch report.surfaceState {
+            case .liveInspectionOnly:
+                return "\(name) \(report.observations.count) live"
+            case .staleInspectionOnly:
+                return "\(name) stale"
+            case .degradedInspectionOnly:
+                return "\(name) degraded"
+            }
+        }.joined(separator: " · ")
+
+        return HStack(spacing: 9) {
+            Image(systemName: "eye.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 14)
+
+            Text(summary)
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.78))
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            Text("INSPECTION ONLY")
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .tracking(0.5)
+                .foregroundStyle(.white.opacity(0.42))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(tint.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(tint.opacity(0.16), lineWidth: 0.5)
+                )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("External agents. \(summary). Inspection only. No actions available.")
     }
 
     /// Persistent hint at the top of the expanded island while no agent
