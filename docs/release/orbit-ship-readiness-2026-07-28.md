@@ -3,9 +3,11 @@
 ## Scope
 
 This receipt covers the isolated integration branch `feat/orbit-ship-integration`
-at commit `7d98ee8978ce231f38b5bb8884ad549d7daeddeb`. It proves local source,
-build, fixture, visual/accessibility-harness, and bounded runtime behavior. It
-does not claim signing, notarization, device transport, publication, push, or
+through its 2026-07-28 gate-clearance commit. It proves local source, build,
+fixture, visual/accessibility-harness, bounded runtime behavior, local
+development signing/install, paired companion build, and publication of this
+GPL-3.0 feature branch to Austin's configured fork. It does not claim
+Developer ID notarization, physical-device transport, release publication, or
 deployment.
 
 ## Product contract proved locally
