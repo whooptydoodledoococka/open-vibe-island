@@ -77,6 +77,9 @@ public struct OrbitReceipt: Codable, Equatable, Identifiable, Sendable {
     public let adapter: String
     public let action: Action
     public let scope: String
+    public let bindingDigest: String?
+    public let bindingNonce: String?
+    public let bindingExpiresAt: Date?
     public let status: Status
     public let summary: String
 
@@ -89,6 +92,9 @@ public struct OrbitReceipt: Codable, Equatable, Identifiable, Sendable {
         adapter: String,
         action: Action,
         scope: String,
+        bindingDigest: String? = nil,
+        bindingNonce: String? = nil,
+        bindingExpiresAt: Date? = nil,
         status: Status,
         summary: String
     ) {
@@ -100,6 +106,9 @@ public struct OrbitReceipt: Codable, Equatable, Identifiable, Sendable {
         self.adapter = adapter
         self.action = action
         self.scope = scope
+        self.bindingDigest = bindingDigest
+        self.bindingNonce = bindingNonce
+        self.bindingExpiresAt = bindingExpiresAt
         self.status = status
         self.summary = summary
     }
@@ -114,6 +123,9 @@ public struct OrbitReceipt: Codable, Equatable, Identifiable, Sendable {
             adapter: adapter,
             action: action,
             scope: scope,
+            bindingDigest: bindingDigest,
+            bindingNonce: bindingNonce,
+            bindingExpiresAt: bindingExpiresAt,
             status: status,
             summary: summary
         )
