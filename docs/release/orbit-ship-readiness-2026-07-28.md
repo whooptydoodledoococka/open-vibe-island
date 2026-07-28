@@ -37,8 +37,8 @@ deployment.
   `output/harness/smoke-all-20260728-163953`.
 - Focused action, receipt, context, efficiency, restart, watchdog, loader,
   reduced-motion, and approval-inbox tests: PASS.
-- Closed-notch idle sample, ten one-second samples: 0.0% CPU throughout;
-  RSS 117,824–118,096 KiB (about 115 MiB), below the 2% CPU and 128 MiB
+- Final closed-notch idle sample: 0.0–0.2% CPU;
+  RSS 117,904–117,920 KiB (about 115 MiB), below the 2% CPU and 128 MiB
   acceptance budgets.
 - Harness process exited cleanly and `OpenIslandApp` was `NOT_RUNNING`.
 - Built executable SHA-256:
