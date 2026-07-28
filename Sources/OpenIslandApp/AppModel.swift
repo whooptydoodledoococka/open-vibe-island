@@ -125,6 +125,10 @@ final class AppModel {
         externalObservationHost.emergencyStop()
     }
 
+    func restartExternalObservationAfterEmergencyStop() {
+        externalObservationHost.restartAfterEmergencyStop()
+    }
+
     /// Monotonic ticket assigned the first time a session ID shows up in the
     /// closed-island's right-slot surfaced set. Drives the grid's display
     /// order: newly-surfaced sessions always land at the end, and a session

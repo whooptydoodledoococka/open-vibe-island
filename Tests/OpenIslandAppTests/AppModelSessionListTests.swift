@@ -1467,6 +1467,17 @@ struct AppModelSessionListTests {
             ownerID: "orbit-owner",
             now: now.addingTimeInterval(2)
         ) == .failure(.stopped))
+
+        model.restartExternalObservationAfterEmergencyStop()
+        #expect(model.orderedExternalObservationReports.isEmpty)
+
+        let restartedReport = try model.ingestExternalObservation(
+            feed: .openCode,
+            data: data,
+            ownerID: "replacement-owner",
+            now: now.addingTimeInterval(3)
+        ).get()
+        #expect(model.orderedExternalObservationReports == [restartedReport])
     }
 
     @Test

@@ -119,6 +119,12 @@ public struct OrbitExternalObservationRuntimeState: Codable, Equatable, Sendable
         nextAllowedAt = nil
     }
 
+    /// Explicitly starts a new observation-runtime generation after an emergency stop.
+    /// Runtime ownership, work, backoff, and success history do not cross generations.
+    public mutating func restartAfterEmergencyStop() {
+        self = OrbitExternalObservationRuntimeState()
+    }
+
     private static func safeOwnerID(_ value: String) -> String? {
         guard !value.isEmpty, value.count <= 128,
               value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
@@ -226,5 +232,13 @@ public struct OrbitExternalObservationHost: Codable, Equatable, Sendable {
             state.emergencyStop()
             runtimeStates[feed] = state
         }
+    }
+
+    /// Explicitly starts a fresh observation generation while retaining the host's
+    /// configured runtime and parsing policies. Reports are cleared so observations
+    /// accepted before the stop cannot be presented as fresh after the restart.
+    public mutating func restartAfterEmergencyStop() {
+        runtimeStates.removeAll(keepingCapacity: true)
+        reports.removeAll(keepingCapacity: true)
     }
 }
