@@ -3,7 +3,7 @@
 ## Scope
 
 This receipt covers the isolated integration branch `feat/orbit-ship-integration`
-at commit `3b41ec2dfbb7f08521589783047ec332989b8c4f`. It proves local source,
+at commit `7d98ee8978ce231f38b5bb8884ad549d7daeddeb`. It proves local source,
 build, fixture, visual/accessibility-harness, and bounded runtime behavior. It
 does not claim signing, notarization, device transport, publication, push, or
 deployment.
@@ -42,11 +42,11 @@ deployment.
 - Swift Testing: 463 tests in 57 suites, zero failures.
 - `scripts/harness.sh smoke-all`: PASS for all 12 scenarios.
 - Visual/AX evidence:
-  `output/harness/smoke-all-20260728-163953`.
+  `output/harness/smoke-all-20260728-171105`.
 - Focused action, receipt, context, efficiency, restart, watchdog, loader,
   reduced-motion, and approval-inbox tests: PASS.
-- Final closed-notch idle sample: 0.0–0.2% CPU;
-  RSS 117,904–117,920 KiB (about 115 MiB), below the 2% CPU and 128 MiB
+- Final closed-notch idle sample: 0.0% CPU;
+  RSS 118,432 KiB (about 116 MiB), below the 2% CPU and 128 MiB
   acceptance budgets.
 - Harness process exited cleanly and `OpenIslandApp` was `NOT_RUNNING`.
 - Live loopback health check: Hermes WebUI `127.0.0.1:8787/health` and
@@ -54,13 +54,13 @@ deployment.
   `/api/sessions` probes returned HTTP 401 without credentials, correctly
   preserving the authentication gate; no cookies or tokens were read.
 - Built executable SHA-256:
-  `f1657fcacab967dbb442bdfd420268decb00ec41918e0ccdc1621f62ce39fda2`.
+  `3f8c94d6de93af800e09596de5c108702850d931e90baebd053a09a6bd394718`.
 
 ## Changed artifact hashes
 
 | Artifact | SHA-256 |
 |---|---|
-| `Sources/OpenIslandApp/AppModel.swift` | `7dede1a3ed9a09720812047bb8b9b10b8e2513c0f93c991a6bd21fe1df35d48a` |
+| `Sources/OpenIslandApp/AppModel.swift` | `a0f98ff620941b42e738114a637621ed4b497ea1487f3e3c30d9e15998214163` |
 | `Sources/OpenIslandApp/OrbitReceiptStatusPresentation.swift` | `8c8630fff3d9923088997983f7a2b92516f1b9bd6a1332b410926f1422f02a0e` |
 | `Sources/OpenIslandApp/OverlayTransitionPolicy.swift` | `8d338229104040a8c9e2d923ad8c2e4ebef18ccde9175a0ff7dc756f76d1327a` |
 | `Sources/OpenIslandApp/OverlayUICoordinator.swift` | `b9476c46acea2577bdaf46a9cd551bc69e62526721028126ad8ee7330fdadbcf` |
@@ -70,9 +70,9 @@ deployment.
 | `Sources/OpenIslandCore/OrbitExternalFeedLoader.swift` | `d5b95ac95b7f5abdee164ed92f2222431c95566f4623851b937f813586390e58` |
 | `Sources/OpenIslandCore/OrbitExternalObservationRuntime.swift` | `15a6478828162037ffc4ab1bdbf779fc9ffc517e20ad282d3ee5e42cee07e36b` |
 | `Sources/OpenIslandCore/OrbitReceipt.swift` | `2a09eac16ee2f5bfaa4cd4db74e7a6117bf31a958004bafdad4bf07ca9ae52eb` |
-| `Sources/OpenIslandCore/OrbitActionBinding.swift` | `0483b0264e335415ab7ed2bafcf4fe23506144713c717cc1db4aa20d3b6dda2e` |
+| `Sources/OpenIslandCore/OrbitActionBinding.swift` | `f9f824cb16f1dd6a3820897b372b7fb7c7e1d35d75ab43c5396f4fb1aa891c36` |
 | `Sources/OpenIslandCore/HermesControlAdapter.swift` | `edd23d1c5109a3dabf9f49c8187eb7403d5b56391747fc8e088176418645c8ec` |
-| `Tests/OpenIslandAppTests/AppModelSessionListTests.swift` | `c80a457d44c05575b5103bddc944a90a179d562398bbe03c9d0ad72f4565ae09` |
+| `Tests/OpenIslandAppTests/AppModelSessionListTests.swift` | `c204f103091a8734a63760bead88de366c37964093f09d75db32ba771c75e808` |
 | `Tests/OpenIslandAppTests/OverlayTransitionPolicyTests.swift` | `68ca2b9f4ed2461ae7379d7fc1bc35bf698e1f0f909a6360d5d1c6244011670c` |
 | `Tests/OpenIslandAppTests/InstallHooksHintPolicyTests.swift` | `7f994e9e585621509a8a02f1d0a9207145a9a7a4d5066512c51021950ad39cdc` |
 | `Tests/OpenIslandCoreTests/HermesGatewayAdapterTests.swift` | `c244d6492a1056203ef735d2d9db7e48bae6a6bf5a27efe1a21cbbf28ddde519` |
@@ -97,15 +97,16 @@ deployment.
 
 The integration work is split into reversible commits:
 
-1. `3b41ec2` one-time bound action authorization and replay rejection.
-2. `037075d` bounded Hermes control adapter and failure contracts.
-3. `2d6f456` quiet first-run integration hint and Hermes failure tests.
-4. `19886e2` truthful companion-action receipts.
-5. `d251687` centralized snappy notch motion.
-6. `4fc3080` docs-index repair.
-7. `f939558` explicit observation restart.
-8. `f1bfcfb` reduced-motion and approval accessibility.
-9. `c8ead8e` bounded external-feed loader.
+1. `7d98ee8` enforce bound authorization in real AppModel delivery paths.
+2. `3b41ec2` one-time bound action authorization and replay rejection.
+3. `037075d` bounded Hermes control adapter and failure contracts.
+4. `2d6f456` quiet first-run integration hint and Hermes failure tests.
+5. `19886e2` truthful companion-action receipts.
+6. `d251687` centralized snappy notch motion.
+7. `4fc3080` docs-index repair.
+8. `f939558` explicit observation restart.
+9. `f1bfcfb` reduced-motion and approval accessibility.
+10. `c8ead8e` bounded external-feed loader.
 
 To remove one slice, create a new rollback branch from the current integration
 head and use `git revert <commit>`, then rerun `scripts/harness.sh ci` and
