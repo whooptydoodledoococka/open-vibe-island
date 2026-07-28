@@ -93,6 +93,42 @@ deployment.
 | Signing/notarization/install | HOLD | Developer ID/provisioning approval, Gatekeeper/notarization/install receipt |
 | Publication/push/deployment | HOLD | License confirmation and explicit destination/action approval |
 
+## Gate-clearance update — 2026-07-28
+
+- Xcode account readiness: a valid Austin Apple Development identity and Team
+  ID `RL574WT5NJ` are available. The iPhone and Watch bundle identifiers are
+  now `com.austinwise.orbit.mobile` and
+  `com.austinwise.orbit.mobile.watchkitapp`.
+- iPhone + Watch simulator build: PASS after correcting the Watch marketing
+  icon slot. Both `OpenIslandMobile.app` and `OpenIslandWatch.app` were
+  produced.
+- Generic physical-device build with automatic provisioning: PASS. Physical
+  installation and WatchConnectivity traversal still require the paired
+  iPhone/Watch to be online and unlocked.
+- Mac package: PASS from a non-FileProvider package root. The packager now
+  strips copied extended attributes before signing and falls back to
+  `hdiutil` when optional `create-dmg` is unavailable.
+- Local development signature: PASS for the app and DMG with identifier
+  `com.austinwise.orbit` and Team ID `RL574WT5NJ`. The signed app was
+  installed at `/Applications/Orbit.app` and launched successfully.
+- Regression: `scripts/harness.sh ci` PASS after these changes.
+- Hermes authentication remains human-held: the opened WebUI rejected the
+  attempted password. No credential, cookie, or token was read. Exact
+  8642/8787 ID correlation remains HOLD until normal WebUI authentication.
+- Notarization remains HOLD because Keychain contains Apple Development
+  identities but no Developer ID Application identity or configured notary
+  profile.
+- Publication remains GPL-3.0-only and HOLD until the verified branch is
+  committed and the configured fork destination is explicitly released.
+
+| Gate-clearance artifact | SHA-256 |
+|---|---|
+| `ios/OpenIslandMobile.xcodeproj/project.pbxproj` | `f424e63db4db234d3586c1c3a1e5244ba229f5a9db86b15e6a76383b41bfbe6a` |
+| `ios/OpenIslandWatch/Assets.xcassets/AppIcon.appiconset/Contents.json` | `5736c633bfb01f72a774684e2f0bc5f99319bd0396d95522cb897405358995e5` |
+| `scripts/package-app.sh` | `10e25ec208a78be4f1d505a928b15f099e6ca9f80d55e017b9567015700b7500` |
+| Signed local `Orbit.zip` | `727625613692fceb13284213f58857149f64c32af2c496929a82bc495f907382` |
+| Signed local `Orbit.dmg` | `081a3e4230ff5dc66457b6cfe61fb155be18ce84ab8fa902b3161f4bbc3a55b5` |
+
 ## Rollback
 
 The integration work is split into reversible commits:

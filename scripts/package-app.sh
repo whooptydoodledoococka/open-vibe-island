@@ -8,8 +8,8 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-app_name="${OPEN_ISLAND_APP_NAME:-Open Island}"
-bundle_identifier="${OPEN_ISLAND_BUNDLE_ID:-app.openisland.dev}"
+app_name="${OPEN_ISLAND_APP_NAME:-Orbit}"
+bundle_identifier="${OPEN_ISLAND_BUNDLE_ID:-com.austinwise.orbit}"
 version="${OPEN_ISLAND_VERSION:-0.1.0}"
 build_number="${OPEN_ISLAND_BUILD_NUMBER:-$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || echo 1)}"
 package_root="${OPEN_ISLAND_PACKAGE_ROOT:-$repo_root/output/package}"
@@ -173,6 +173,11 @@ fi
 sparkle_fw="$bundle_dir/Contents/Frameworks/Sparkle.framework"
 
 if [[ -n "$signing_identity" ]]; then
+    # Documents/iCloud/FileProvider checkouts can attach Finder metadata while
+    # copying resources. Apple code signing rejects those extended attributes,
+    # so sanitize the assembled bundle (never the source tree) before signing.
+    xattr -cr "$bundle_dir"
+
     # Sign nested code objects inside-out: Sparkle internals → helpers → app.
 
     if [[ -d "$sparkle_fw" ]]; then
@@ -226,19 +231,29 @@ fi
 # --- Styled DMG creation ---
 dmg_bg="$repo_root/Assets/Brand/dmg-background@2x.png"
 
-create-dmg \
-    --volname "$app_name" \
-    --background "$dmg_bg" \
-    --window-pos 200 120 \
-    --window-size 660 400 \
-    --icon-size 96 \
-    --text-size 13 \
-    --icon "$app_name.app" 180 210 \
-    --hide-extension "$app_name.app" \
-    --app-drop-link 480 210 \
-    --no-internet-enable \
-    "$dmg_path" \
-    "$bundle_dir"
+if command -v create-dmg >/dev/null 2>&1; then
+    create-dmg \
+        --volname "$app_name" \
+        --background "$dmg_bg" \
+        --window-pos 200 120 \
+        --window-size 660 400 \
+        --icon-size 96 \
+        --text-size 13 \
+        --icon "$app_name.app" 180 210 \
+        --hide-extension "$app_name.app" \
+        --app-drop-link 480 210 \
+        --no-internet-enable \
+        "$dmg_path" \
+        "$bundle_dir"
+else
+    echo "WARNING: create-dmg not installed; creating a standard DMG with hdiutil." >&2
+    hdiutil create \
+        -volname "$app_name" \
+        -srcfolder "$bundle_dir" \
+        -ov \
+        -format UDZO \
+        "$dmg_path" >/dev/null
+fi
 
 # Sign the DMG itself (required before notarization)
 if [[ -n "$signing_identity" ]]; then
