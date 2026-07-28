@@ -30,6 +30,7 @@ enum IslandRightSlotContent: Equatable {
 
 struct V6RightSlotView: View {
     let content: IslandRightSlotContent
+    var motionPolicy: OrbitMotionPolicy = .system
 
     var body: some View {
         switch content {
@@ -40,7 +41,7 @@ struct V6RightSlotView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(V6Palette.paper.opacity(0.72))
         case .agents(let cells):
-            AgentsGridBody(cells: cells)
+            AgentsGridBody(cells: cells, motionPolicy: motionPolicy)
         }
     }
 
@@ -114,6 +115,7 @@ struct V6RightSlotView: View {
 /// idle = 22% alpha, waiting = opacity 0.35 ↔ 1 breathing pulse.
 private struct AgentsGridBody: View {
     let cells: [AgentGridCell]
+    let motionPolicy: OrbitMotionPolicy
 
     var body: some View {
         let rowSizes = V6RightSlotView.balancedRows(cells.count)
@@ -124,7 +126,7 @@ private struct AgentsGridBody: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: geom.gap) {
                     ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        AgentsGridTileView(cell: cell, size: geom.cell, radius: geom.radius)
+                        AgentsGridTileView(cell: cell, size: geom.cell, radius: geom.radius, motionPolicy: motionPolicy)
                     }
                 }
             }
@@ -137,6 +139,7 @@ private struct AgentsGridTileView: View {
     let cell: AgentGridCell
     let size: CGFloat
     let radius: CGFloat
+    let motionPolicy: OrbitMotionPolicy
 
     var body: some View {
         switch cell {
@@ -151,7 +154,7 @@ private struct AgentsGridTileView: View {
                     .fill(color.opacity(0.22))
                     .frame(width: size, height: size)
             case .waiting:
-                AgentsGridWaitingTile(color: color, size: size, radius: radius)
+                AgentsGridWaitingTile(color: color, size: size, radius: radius, motionPolicy: motionPolicy)
             }
         case .overflow(let n):
             ZStack {
@@ -170,14 +173,16 @@ private struct AgentsGridWaitingTile: View {
     let color: Color
     let size: CGFloat
     let radius: CGFloat
+    let motionPolicy: OrbitMotionPolicy
     @State private var pulse = false
 
     var body: some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(color)
             .frame(width: size, height: size)
-            .opacity(pulse ? 1.0 : 0.35)
+            .opacity(motionPolicy.reducesMotion ? 1.0 : (pulse ? 1.0 : 0.35))
             .onAppear {
+                guard !motionPolicy.reducesMotion else { return }
                 withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
                     pulse = true
                 }
@@ -221,6 +226,7 @@ struct V6ClosedPill: View {
     /// External mode only — minimum pill width (locked). Defaults to the
     /// width that fits just the glyph.
     var minWidth: CGFloat = 70
+    var motionPolicy: OrbitMotionPolicy = .system
 
     var body: some View {
         switch layout {
@@ -255,7 +261,7 @@ struct V6ClosedPill: View {
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
+                UnifiedBars(mode: mode, size: 24, motionPolicy: motionPolicy)
                     .frame(width: glyphW, height: 24)
 
                 if let label {
@@ -267,7 +273,7 @@ struct V6ClosedPill: View {
                 Spacer(minLength: Self.innerGap)
 
                 if let rightSlot {
-                    V6RightSlotView(content: rightSlot)
+                    V6RightSlotView(content: rightSlot, motionPolicy: motionPolicy)
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -275,7 +281,7 @@ struct V6ClosedPill: View {
         }
         .frame(width: width, height: height)
         .animation(
-            .timingCurve(0.4, 0, 0.2, 1, duration: 0.45),
+            motionPolicy.animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.45)),
             value: AnyHashable([
                 AnyHashable(label ?? ""),
                 AnyHashable(rightSlot.map(RightSlotKey.init) ?? .none),
@@ -295,13 +301,13 @@ struct V6ClosedPill: View {
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
+                UnifiedBars(mode: mode, size: 24, motionPolicy: motionPolicy)
                     .frame(width: 24, height: 24)
 
                 Spacer(minLength: 0)
 
                 if let rightSlot {
-                    V6RightSlotView(content: rightSlot)
+                    V6RightSlotView(content: rightSlot, motionPolicy: motionPolicy)
                 }
             }
             .padding(.horizontal, pad)

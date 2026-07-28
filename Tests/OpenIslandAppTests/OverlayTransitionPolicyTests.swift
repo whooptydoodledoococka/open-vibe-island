@@ -2,6 +2,21 @@ import Testing
 @testable import OpenIslandApp
 
 struct OverlayTransitionPolicyTests {
+    @Test func reducedMotionPolicyRemovesAnimationAndDelay() {
+        let policy = OrbitMotionPolicy(reducesMotion: true)
+
+        #expect(policy.reducesMotion)
+        #expect(policy.animation(.linear(duration: 1)) == nil)
+        #expect(policy.delay(0.3) == 0)
+    }
+
+    @Test func standardMotionPolicyPreservesAnimationAndDelay() {
+        let policy = OrbitMotionPolicy(reducesMotion: false)
+
+        #expect(policy.animation(.linear(duration: 1)) != nil)
+        #expect(policy.delay(0.3) == 0.3)
+    }
+
     @Test
     func newTransitionInvalidatesPreviousToken() {
         var policy = OverlayTransitionPolicy()

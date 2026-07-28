@@ -102,6 +102,11 @@ struct IslandPanelView: View {
     private static let minimumRightUsageLaneWidth: CGFloat = 58
 
     var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
+    private var motionPolicy: OrbitMotionPolicy {
+        OrbitMotionPolicy(reducesMotion: accessibilityReduceMotion)
+    }
     private var lang: LanguageManager { model.lang }
 
     @State private var isHovering = false
@@ -240,10 +245,10 @@ struct IslandPanelView: View {
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
-        .animation(notchTransitionAnimation, value: model.notchStatus)
+        .animation(motionPolicy.animation(notchTransitionAnimation), value: model.notchStatus)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+            withAnimation(motionPolicy.animation(.spring(response: 0.38, dampingFraction: 0.8))) {
                 isHovering = hovering
             }
         }
@@ -295,10 +300,11 @@ struct IslandPanelView: View {
             layout: layout,
             height: closedNotchHeight,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
+            minWidth: 70,
+            motionPolicy: motionPolicy
         )
-        .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
-        .animation(popAnimation, value: isPopping)
+        .scaleEffect(motionPolicy.reducesMotion ? 1 : (isPopping ? 1.04 : 1), anchor: .top)
+        .animation(motionPolicy.animation(popAnimation), value: isPopping)
     }
 
     // MARK: - Opened surface
@@ -1452,6 +1458,7 @@ private enum IslandSessionRowPresentation {
 }
 
 private struct IslandSessionRow: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     let session: AgentSession
     let referenceDate: Date
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
@@ -1472,6 +1479,10 @@ private struct IslandSessionRow: View {
     @State private var detailOverride: Bool?
     @State private var replyText: String = ""
     @State private var actionableRequestIndex = 0
+
+    private var motionPolicy: OrbitMotionPolicy {
+        OrbitMotionPolicy(reducesMotion: accessibilityReduceMotion)
+    }
 
     var body: some View {
         rowBody(referenceDate: referenceDate)
@@ -2009,8 +2020,14 @@ private struct IslandSessionRow: View {
             HStack(spacing: 8) {
                 Button(request.secondaryActionTitle) { onApprove?(request.id, .deny) }
                     .buttonStyle(IslandActionButtonStyle(kind: .secondary, expands: true))
+                    .accessibilityLabel("Deny request")
+                    .accessibilityHint("Denies this request without granting permission")
+                    .accessibilitySortPriority(30)
                 Button(request.primaryActionTitle) { onApprove?(request.id, .allowOnce) }
                     .buttonStyle(IslandActionButtonStyle(kind: .warning, expands: true))
+                    .accessibilityLabel("Allow request once")
+                    .accessibilityHint("Approves only this request")
+                    .accessibilitySortPriority(29)
                 if let toolName = request.toolName {
                     Button(lang.t("approval.alwaysAllow", toolName)) {
                         let rule = ClaudePermissionRuleValue(toolName: toolName)
@@ -2022,6 +2039,9 @@ private struct IslandSessionRow: View {
                         onApprove?(request.id, .allowWithUpdates([update]))
                     }
                     .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
+                    .accessibilityLabel("Always allow \(toolName)")
+                    .accessibilityHint("Approves this request and adds a session permission rule")
+                    .accessibilitySortPriority(28)
                 }
             }
         }
@@ -2108,6 +2128,9 @@ private struct IslandSessionRow: View {
                 onSubmit: { submitReply() }
             )
             .frame(height: 32)
+            .accessibilityLabel("Completion reply")
+            .accessibilityHint("Type a reply to \(session.completionReplyRecipientName)")
+            .accessibilitySortPriority(11)
 
             Button {
                 submitReply()
@@ -2119,6 +2142,9 @@ private struct IslandSessionRow: View {
             }
             .buttonStyle(.plain)
             .disabled(replyText.trimmingCharacters(in: .whitespaces).isEmpty)
+            .accessibilityLabel("Send completion reply")
+            .accessibilityHint("Sends the typed reply to \(session.completionReplyRecipientName)")
+            .accessibilitySortPriority(10)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -2214,7 +2240,8 @@ private struct IslandSessionRow: View {
         let tint = statusTint(for: presence)
         switch stateIndicator {
         case .animatedDot:
-            if let interval = stateIndicator.timelineInterval(presence: presence, isActionable: isActionable) {
+            if !motionPolicy.reducesMotion,
+               let interval = stateIndicator.timelineInterval(presence: presence, isActionable: isActionable) {
                 TimelineView(.periodic(from: .now, by: interval)) { context in
                     let pulse = (sin(context.date.timeIntervalSinceReferenceDate * 3.2) + 1) / 2
                     statusDot(tint: tint, presence: presence, pulse: pulse)
@@ -2311,7 +2338,7 @@ private struct IslandSessionRow: View {
     private func detailToggleButton(isOpen: Bool) -> some View {
         Button {
             guard isInteractive else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(motionPolicy.animation(.easeInOut(duration: 0.2))) {
                 detailOverride = !isOpen
             }
         } label: {
@@ -2328,6 +2355,9 @@ private struct IslandSessionRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isOpen ? "Collapse session detail" : "Expand session detail")
+        .accessibilityHint(isOpen ? "Hides command and session details" : "Shows command and session details")
+        .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+        .accessibilitySortPriority(20)
     }
 
     private func detailToggleFillOpacity(isOpen: Bool) -> Double {
@@ -2384,6 +2414,7 @@ private struct IslandSessionRow: View {
 }
 
 private struct StructuredQuestionPromptView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     let prompt: QuestionPrompt?
     var lang: LanguageManager = .shared
     let onAnswer: (QuestionPromptResponse) -> Void
@@ -2418,6 +2449,8 @@ private struct StructuredQuestionPromptView: View {
                 }
                 .buttonStyle(IslandActionButtonStyle(kind: canSubmit ? .primary : .secondary, expands: true))
                 .disabled(!canSubmit)
+                .accessibilityLabel("Submit answer")
+                .accessibilityHint("Sends the selected or typed answer")
             }
         }
         .padding(.horizontal, 10)
@@ -2529,8 +2562,13 @@ private struct StructuredQuestionPromptView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(optionStrokeColor(isSelected: isSelected, isHovered: isHovered))
         )
+        .accessibilityLabel(option.label)
+        .accessibilityHint(question.multiSelect ? "Toggles this answer" : "Selects this answer")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilitySortPriority(Double(question.options.count - optionIndex))
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
+            withAnimation(OrbitMotionPolicy(reducesMotion: accessibilityReduceMotion).animation(.easeInOut(duration: 0.12))) {
                 hoveredOptionKey = hovering ? key : (hoveredOptionKey == key ? nil : hoveredOptionKey)
             }
         }
@@ -2565,6 +2603,8 @@ private struct StructuredQuestionPromptView: View {
             }
             .buttonStyle(IslandActionButtonStyle(kind: canSubmit ? .primary : .secondary, expands: true))
             .disabled(!canSubmit)
+            .accessibilityLabel("Submit answer")
+            .accessibilityHint("Sends the selected or typed answer")
         }
     }
 

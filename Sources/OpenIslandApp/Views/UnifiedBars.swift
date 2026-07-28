@@ -29,6 +29,7 @@ struct UnifiedBars: View {
 
     var mode: Mode
     var size: CGFloat = 24
+    var motionPolicy: OrbitMotionPolicy = .system
     /// Ink color for bars / tick. Defaults to the v6 paper ink.
     var tint: Color = Color(red: 0xf1 / 255.0, green: 0xea / 255.0, blue: 0xd9 / 255.0)
 
@@ -44,22 +45,23 @@ struct UnifiedBars: View {
 
     @ViewBuilder
     var body: some View {
-        LayerRepresentable(mode: mode, tint: tint)
+        LayerRepresentable(mode: mode, tint: tint, motionPolicy: motionPolicy)
             .frame(width: size, height: size)
     }
 
     private struct LayerRepresentable: NSViewRepresentable {
         let mode: Mode
         let tint: Color
+        let motionPolicy: OrbitMotionPolicy
 
         func makeNSView(context: Context) -> LayerView {
             let view = LayerView()
-            view.update(mode: mode, tint: NSColor(tint))
+            view.update(mode: mode, tint: NSColor(tint), motionPolicy: motionPolicy)
             return view
         }
 
         func updateNSView(_ nsView: LayerView, context: Context) {
-            nsView.update(mode: mode, tint: NSColor(tint))
+            nsView.update(mode: mode, tint: NSColor(tint), motionPolicy: motionPolicy)
         }
     }
 
@@ -67,6 +69,7 @@ struct UnifiedBars: View {
         private let barLayers = [CAShapeLayer(), CAShapeLayer(), CAShapeLayer()]
         private var mode: Mode = .idle
         private var tintColor = NSColor.white
+        private var motionPolicy = OrbitMotionPolicy(reducesMotion: false)
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -85,9 +88,10 @@ struct UnifiedBars: View {
             fatalError("init(coder:) has not been implemented")
         }
 
-        func update(mode: Mode, tint: NSColor) {
+        func update(mode: Mode, tint: NSColor, motionPolicy: OrbitMotionPolicy) {
             self.mode = mode
             tintColor = tint
+            self.motionPolicy = motionPolicy
             needsLayout = true
         }
 
@@ -164,7 +168,7 @@ struct UnifiedBars: View {
 
         private func configureAnimations(for barLayer: CAShapeLayer, column: Column) {
             barLayer.removeAllAnimations()
-            guard mode.usesLayerAnimation, !barLayer.isHidden else { return }
+            guard !motionPolicy.reducesMotion, mode.usesLayerAnimation, !barLayer.isHidden else { return }
 
             switch mode {
             case .idle:

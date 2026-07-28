@@ -2,6 +2,27 @@ import AppKit
 import Foundation
 import Observation
 import OpenIslandCore
+import SwiftUI
+
+struct OrbitMotionPolicy: Equatable, Sendable {
+    let reducesMotion: Bool
+
+    init(reducesMotion: Bool) {
+        self.reducesMotion = reducesMotion
+    }
+
+    static var system: Self {
+        Self(reducesMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    func animation(_ animation: Animation) -> Animation? {
+        reducesMotion ? nil : animation
+    }
+
+    func delay(_ delay: TimeInterval) -> TimeInterval {
+        reducesMotion ? 0 : delay
+    }
+}
 
 @MainActor
 @Observable
@@ -54,6 +75,9 @@ final class OverlayUICoordinator {
 
     @ObservationIgnored
     private var transitionPolicy = OverlayTransitionPolicy()
+
+    @ObservationIgnored
+    var motionPolicy = OrbitMotionPolicy.system
 
     @ObservationIgnored
     private var notificationAutoCollapseTask: Task<Void, Never>?
@@ -224,7 +248,7 @@ final class OverlayUICoordinator {
         let token = transitionPolicy.beginTransition()
         islandSurface = .sessionList()
         notchStatus = .popping
-        DispatchQueue.main.asyncAfter(deadline: .now() + OverlayTransitionPolicy.popDelay) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + motionPolicy.delay(OverlayTransitionPolicy.popDelay)) { [weak self] in
             guard let self, self.transitionPolicy.accepts(token), self.notchStatus == .popping else { return }
             self.notchStatus = .closed
         }
