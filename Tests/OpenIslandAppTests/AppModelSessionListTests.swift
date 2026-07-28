@@ -1576,6 +1576,9 @@ struct AppModelSessionListTests {
         let history = model.receipts.filter { $0.action == .sessionReplied }
         #expect(history.map(\.status) == [.decisionCaptured, .deliveryPending, .delivered])
         #expect(!history.contains { $0.status == .acknowledged })
+        #expect(history.compactMap(\.bindingDigest).count == history.count)
+        #expect(Set(history.compactMap(\.bindingNonce)).count == 1)
+        #expect(history.allSatisfy { $0.bindingExpiresAt != nil })
     }
 
     @Test
@@ -1593,6 +1596,8 @@ struct AppModelSessionListTests {
         let receipt = try #require(model.receipts.last)
         #expect(receipt.action == .sessionSteered)
         #expect(receipt.status == .rejected)
+        #expect(receipt.bindingDigest != nil)
+        #expect(receipt.bindingNonce != nil)
     }
 
     @Test
@@ -1605,6 +1610,8 @@ struct AppModelSessionListTests {
 
         #expect(model.receipts.last?.action == .sessionCancelled)
         #expect(model.receipts.last?.status == .rejected)
+        #expect(model.receipts.last?.bindingDigest != nil)
+        #expect(model.receipts.last?.bindingNonce != nil)
         #expect(model.lastActionMessage.contains("unavailable"))
     }
 

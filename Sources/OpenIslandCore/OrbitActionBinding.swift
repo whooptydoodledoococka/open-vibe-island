@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 public struct OrbitActionBinding: Codable, Equatable, Sendable {
     public let sessionID: String
@@ -22,6 +23,54 @@ public struct OrbitActionBinding: Codable, Equatable, Sendable {
         self.payloadDigest = payloadDigest
         self.expiresAt = expiresAt
         self.nonce = nonce
+    }
+}
+
+public extension OrbitActionBinding {
+    static func make(
+        sessionID: String,
+        requestID: String,
+        action: String,
+        scope: String,
+        providerCorrelationID: String?,
+        now: Date = .now,
+        ttl: TimeInterval = 120,
+        nonce: String = UUID().uuidString
+    ) -> OrbitActionBinding {
+        let expiresAt = now.addingTimeInterval(max(1, min(ttl, 600)))
+        return OrbitActionBinding(
+            sessionID: sessionID,
+            requestID: requestID,
+            action: action,
+            payloadDigest: digest(
+                sessionID: sessionID,
+                requestID: requestID,
+                action: action,
+                scope: scope,
+                providerCorrelationID: providerCorrelationID
+            ),
+            expiresAt: expiresAt,
+            nonce: nonce
+        )
+    }
+
+    static func digest(
+        sessionID: String,
+        requestID: String,
+        action: String,
+        scope: String,
+        providerCorrelationID: String?
+    ) -> String {
+        let canonical = [
+            sessionID,
+            requestID,
+            action,
+            scope,
+            providerCorrelationID ?? "",
+        ].joined(separator: "\u{1F}")
+        return SHA256.hash(data: Data(canonical.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 

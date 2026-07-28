@@ -55,6 +55,7 @@ final class AppModel {
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
     private(set) var receiptLedger = OrbitReceiptLedger()
+    private var actionAuthorizationLedger = OrbitActionAuthorizationLedger()
     private(set) var contextEvidenceLedger = OrbitContextEvidenceLedger()
     private(set) var efficiencyTelemetryLedger = OrbitEfficiencyTelemetryLedger()
     private(set) var externalObservationHost = OrbitExternalObservationHost()
@@ -1395,6 +1396,7 @@ final class AppModel {
     ) {
         state = SessionState(sessions: snapshot.sessions)
         receiptLedger = OrbitReceiptLedger()
+        actionAuthorizationLedger = OrbitActionAuthorizationLedger()
         for receipt in snapshot.receipts {
             receiptLedger.append(receipt)
         }
@@ -1568,6 +1570,10 @@ final class AppModel {
             scope: receiptScope(for: session, request: request),
             summary: approved ? "permission decision captured" : "permission denial captured"
         )
+        guard receiptLedger.entry(id: receiptID)?.status == .decisionCaptured else {
+            lastActionMessage = "Permission authorization failed closed; nothing was changed."
+            return
+        }
         holdNotificationSurfaceForReceiptIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, requestID: request.id, resolution: resolution)
         synchronizeSelection()
@@ -1624,6 +1630,10 @@ final class AppModel {
             scope: receiptScope(for: session, request: request),
             summary: "permission decision captured"
         )
+        guard receiptLedger.entry(id: receiptID)?.status == .decisionCaptured else {
+            lastActionMessage = "Permission authorization failed closed; nothing was changed."
+            return
+        }
 
         holdNotificationSurfaceForReceiptIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, requestID: request.id, resolution: resolution)
@@ -1669,6 +1679,10 @@ final class AppModel {
             scope: "question",
             summary: "question answer captured"
         )
+        guard receiptLedger.entry(id: receiptID)?.status == .decisionCaptured else {
+            lastActionMessage = "Answer authorization failed closed; nothing was changed."
+            return
+        }
 
         holdNotificationSurfaceForReceiptIfPresent(for: sessionID)
         state.answerQuestion(sessionID: session.id, requestID: prompt.id, response: answer)
@@ -1695,14 +1709,14 @@ final class AppModel {
     }
 
     func cancelSession(_ session: AgentSession) {
-        receiptLedger.append(OrbitReceipt(
-            sessionID: session.id,
-            adapter: session.tool.rawValue,
+        let receiptID = queueReceipt(
+            for: session,
             action: .sessionCancelled,
+            requestID: nil,
             scope: "session",
-            status: .rejected,
-            summary: "adapter does not expose bounded cancellation"
-        ))
+            summary: "cancel attempt captured"
+        )
+        updateReceipt(receiptID, status: .rejected)
         lastActionMessage = "Cancel is unavailable for \(session.tool.displayName); no action was sent."
     }
 
@@ -1718,14 +1732,14 @@ final class AppModel {
               current.isProcessAlive,
               current.attachmentState == .attached,
               current.jumpTarget != nil else {
-            receiptLedger.append(OrbitReceipt(
-                sessionID: session.id,
-                adapter: session.tool.rawValue,
+            let receiptID = queueReceipt(
+                for: session,
                 action: action,
+                requestID: nil,
                 scope: "session",
-                status: .rejected,
-                summary: "stale, missing, or unavailable session target"
-            ))
+                summary: "unavailable session action captured"
+            )
+            updateReceipt(receiptID, status: .rejected)
             lastActionMessage = "Cannot \(verb): the session target is unavailable or stale."
             return
         }
@@ -1740,6 +1754,10 @@ final class AppModel {
             scope: "session",
             summary: "\(verb) decision captured"
         )
+        guard receiptLedger.entry(id: receiptID)?.status == .decisionCaptured else {
+            lastActionMessage = "Cannot \(verb): action authorization failed closed."
+            return
+        }
         updateReceipt(receiptID, status: .deliveryPending)
         lastActionMessage = "Sending \(verb) to \(current.title)…"
         let terminalTextAction = terminalTextAction
@@ -1764,13 +1782,55 @@ final class AppModel {
         scope: String,
         summary: String
     ) -> UUID {
+        let receiptID = UUID()
+        let createdAt = Date.now
+        let requestIdentity = requestID?.uuidString ?? receiptID.uuidString
+        let binding = OrbitActionBinding.make(
+            sessionID: session.id,
+            requestID: requestIdentity,
+            action: action.rawValue,
+            scope: scope,
+            providerCorrelationID: providerCorrelationID,
+            now: createdAt
+        )
+        let authorization = actionAuthorizationLedger.authorize(
+            binding,
+            expectedSessionID: session.id,
+            expectedRequestID: requestIdentity,
+            expectedAction: action.rawValue,
+            expectedPayloadDigest: binding.payloadDigest,
+            now: createdAt
+        )
+        guard case .success = authorization else {
+            receiptLedger.append(OrbitReceipt(
+                id: receiptID,
+                createdAt: createdAt,
+                sessionID: session.id,
+                requestID: requestID,
+                providerCorrelationID: providerCorrelationID,
+                adapter: session.tool.rawValue,
+                action: action,
+                scope: scope,
+                bindingDigest: binding.payloadDigest,
+                bindingNonce: binding.nonce,
+                bindingExpiresAt: binding.expiresAt,
+                status: .rejected,
+                summary: "action authorization failed closed"
+            ))
+            return receiptID
+        }
         let receipt = OrbitReceipt(
+            id: receiptID,
+            createdAt: createdAt,
             sessionID: session.id,
             requestID: requestID,
             providerCorrelationID: providerCorrelationID,
             adapter: session.tool.rawValue,
             action: action,
             scope: scope,
+            bindingDigest: binding.payloadDigest,
+            bindingNonce: binding.nonce,
+            bindingExpiresAt: binding.expiresAt,
             status: .decisionCaptured,
             summary: summary
         )
@@ -1802,6 +1862,11 @@ final class AppModel {
     }
 
     private func send(_ command: BridgeCommand, userMessage: String, receiptID: UUID? = nil) {
+        if let receiptID,
+           receiptLedger.entry(id: receiptID)?.status != .decisionCaptured {
+            lastActionMessage = "Action authorization failed closed; nothing was sent."
+            return
+        }
         lastActionMessage = userMessage
         if let receiptID {
             updateReceipt(receiptID, status: .deliveryPending)
