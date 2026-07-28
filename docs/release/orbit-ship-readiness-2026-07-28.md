@@ -45,6 +45,10 @@ deployment.
   RSS 117,904–117,920 KiB (about 115 MiB), below the 2% CPU and 128 MiB
   acceptance budgets.
 - Harness process exited cleanly and `OpenIslandApp` was `NOT_RUNNING`.
+- Live loopback health check: Hermes WebUI `127.0.0.1:8787/health` and
+  Hermes gateway `127.0.0.1:8642/health` both returned HTTP 200. Both
+  `/api/sessions` probes returned HTTP 401 without credentials, correctly
+  preserving the authentication gate; no cookies or tokens were read.
 - Built executable SHA-256:
   `c053a059a1773be46224975af45268fea4c0d20f693611b0598177f489f51034`.
 
