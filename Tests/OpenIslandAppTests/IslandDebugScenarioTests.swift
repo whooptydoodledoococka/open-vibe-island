@@ -31,5 +31,7 @@ struct IslandDebugScenarioTests {
         #expect(evidence?.confidence == .estimated)
         #expect(evidence?.freshness == .fresh)
         #expect(evidence?.reversibleReferenceID == "blob_demo_context")
+        #expect(snapshot.efficiencyTelemetry.count == 1)
+        #expect(snapshot.efficiencyTelemetry.first?.sessionID == snapshot.selectedSessionID)
     }
 }

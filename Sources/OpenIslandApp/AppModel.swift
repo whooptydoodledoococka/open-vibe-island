@@ -56,6 +56,7 @@ final class AppModel {
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
     private(set) var receiptLedger = OrbitReceiptLedger()
     private(set) var contextEvidenceLedger = OrbitContextEvidenceLedger()
+    private(set) var efficiencyTelemetryLedger = OrbitEfficiencyTelemetryLedger()
     var hermesGatewaySnapshot = HermesGatewaySnapshot(
         gateway: .unavailable,
         sessions: .unavailable,
@@ -81,6 +82,20 @@ final class AppModel {
 
     func recordContextEvidence(_ evidence: OrbitContextEvidence) {
         contextEvidenceLedger.append(evidence)
+    }
+
+    var selectedEfficiencyAggregate: OrbitEfficiencyAggregate? {
+        guard let selectedSessionID else { return nil }
+        let aggregate = efficiencyTelemetryLedger.aggregate(sessionID: selectedSessionID)
+        return aggregate.samples > 0 ? aggregate : nil
+    }
+
+    func recordEfficiencyTelemetry(_ telemetry: OrbitEfficiencyTelemetry) {
+        efficiencyTelemetryLedger.append(telemetry)
+    }
+
+    func redactedEfficiencyExport(sessionID: String, taskID: String? = nil) throws -> Data {
+        try efficiencyTelemetryLedger.redactedExport(sessionID: sessionID, taskID: taskID)
     }
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
@@ -1348,6 +1363,10 @@ final class AppModel {
         contextEvidenceLedger = OrbitContextEvidenceLedger()
         for evidence in snapshot.contextEvidence {
             contextEvidenceLedger.append(evidence)
+        }
+        efficiencyTelemetryLedger = OrbitEfficiencyTelemetryLedger()
+        for telemetry in snapshot.efficiencyTelemetry {
+            efficiencyTelemetryLedger.append(telemetry)
         }
         if let hermesGatewaySnapshot = snapshot.hermesGatewaySnapshot {
             self.hermesGatewaySnapshot = hermesGatewaySnapshot

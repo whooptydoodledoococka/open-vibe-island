@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Privacy-safe efficiency evidence for one adapter/provider operation.
@@ -181,6 +182,58 @@ public struct OrbitEfficiencyAggregate: Codable, Equatable, Sendable {
     }
 }
 
+public struct OrbitEfficiencyRedactedExport: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let sessionReference: String
+    public let taskReference: String?
+    public let samples: Int
+    public let inputTokens: Int
+    public let outputTokens: Int
+    public let cachedInputTokens: Int
+    public let cacheWriteTokens: Int
+    public let retainedTokens: Int
+    public let omittedTokens: Int
+    public let toolCalls: Int
+    public let totalLatencyMilliseconds: Int
+    public let averageLatencyMilliseconds: Int
+    public let maxLatencyMilliseconds: Int
+    public let approvalInterruptions: Int
+    public let retries: Int
+    public let failures: Int
+    public let completionQualityEvidence: Int
+    public let cost: OrbitEfficiencyTelemetry.CostEstimate?
+    public let freshness: OrbitEfficiencyTelemetry.Freshness
+    public let confidence: OrbitEfficiencyTelemetry.Confidence
+
+    fileprivate init(aggregate: OrbitEfficiencyAggregate) {
+        self.schemaVersion = 1
+        self.sessionReference = Self.reference(for: aggregate.sessionID)
+        self.taskReference = aggregate.taskID.map(Self.reference(for:))
+        self.samples = aggregate.samples
+        self.inputTokens = aggregate.inputTokens
+        self.outputTokens = aggregate.outputTokens
+        self.cachedInputTokens = aggregate.cachedInputTokens
+        self.cacheWriteTokens = aggregate.cacheWriteTokens
+        self.retainedTokens = aggregate.retainedTokens
+        self.omittedTokens = aggregate.omittedTokens
+        self.toolCalls = aggregate.toolCalls
+        self.totalLatencyMilliseconds = aggregate.totalLatencyMilliseconds
+        self.averageLatencyMilliseconds = aggregate.averageLatencyMilliseconds
+        self.maxLatencyMilliseconds = aggregate.maxLatencyMilliseconds
+        self.approvalInterruptions = aggregate.approvalInterruptions
+        self.retries = aggregate.retries
+        self.failures = aggregate.failures
+        self.completionQualityEvidence = aggregate.completionQualityEvidence
+        self.cost = aggregate.cost
+        self.freshness = aggregate.freshness
+        self.confidence = aggregate.confidence
+    }
+
+    private static func reference(for value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 /// Bounded, in-memory retention for telemetry events.
 public struct OrbitEfficiencyTelemetryLedger: Codable, Equatable, Sendable {
     public private(set) var entries: [OrbitEfficiencyTelemetry]
@@ -205,7 +258,10 @@ public struct OrbitEfficiencyTelemetryLedger: Codable, Equatable, Sendable {
 
     /// JSON contains only this contract's bounded, metadata-only aggregate.
     public func redactedExport(sessionID: String, taskID: String? = nil) throws -> Data {
-        try JSONEncoder().encode(aggregate(sessionID: sessionID, taskID: taskID))
+        let export = OrbitEfficiencyRedactedExport(
+            aggregate: aggregate(sessionID: sessionID, taskID: taskID)
+        )
+        return try JSONEncoder().encode(export)
     }
 }
 

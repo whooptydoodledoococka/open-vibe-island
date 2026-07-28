@@ -132,9 +132,24 @@ struct OrbitEfficiencyTelemetryTests {
     @Test
     func redactedExportContainsOnlyBoundedMetadata() throws {
         var ledger = OrbitEfficiencyTelemetryLedger()
-        ledger.append(sample(id: id, input: 7, output: 3, toolCalls: 2))
+        ledger.append(OrbitEfficiencyTelemetry(
+            id: id,
+            sessionID: "private-session-123",
+            taskID: "private-task-456",
+            adapter: "codex",
+            provider: "openai",
+            route: "responses-api",
+            freshness: .fresh,
+            confidence: .exact,
+            inputTokens: 7,
+            outputTokens: 3,
+            toolCalls: 2
+        ))
 
-        let data = try ledger.redactedExport(sessionID: "session")
+        let data = try ledger.redactedExport(
+            sessionID: "private-session-123",
+            taskID: "private-task-456"
+        )
         let json = String(decoding: data, as: UTF8.self).lowercased()
 
         #expect(json.contains("inputtokens"))
@@ -144,6 +159,9 @@ struct OrbitEfficiencyTelemetryTests {
         #expect(!json.contains("/private"))
         #expect(!json.contains("transcript"))
         #expect(!json.contains("secret"))
+        #expect(!json.contains("private-session-123"))
+        #expect(!json.contains("private-task-456"))
+        #expect(json.contains("sessionreference"))
     }
 
     private func sample(

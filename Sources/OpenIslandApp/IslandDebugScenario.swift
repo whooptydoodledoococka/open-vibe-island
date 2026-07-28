@@ -14,6 +14,7 @@ struct IslandDebugSnapshot {
     var hermesGatewaySnapshot: HermesGatewaySnapshot? = nil
     var receipts: [OrbitReceipt] = []
     var contextEvidence: [OrbitContextEvidence] = []
+    var efficiencyTelemetry: [OrbitEfficiencyTelemetry] = []
 }
 
 enum IslandDebugScenario: String, CaseIterable, Identifiable {
@@ -265,6 +266,30 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 budget: report,
                 reversibleReferenceID: "blob_demo_context"
             )
+            let telemetry = OrbitEfficiencyTelemetry(
+                id: UUID(uuidString: "70000000-0000-0000-0000-000000000002")!,
+                sessionID: sessions[0].id,
+                taskID: "task_demo_context",
+                adapter: AgentTool.codex.rawValue,
+                provider: "openai",
+                model: "demo-model",
+                route: "austin-router",
+                observedAt: now,
+                freshness: .fresh,
+                confidence: .estimated,
+                inputTokens: 60_000,
+                outputTokens: 4_000,
+                cachedInputTokens: 21_000,
+                cacheWriteTokens: 2_000,
+                retainedTokens: report.retainedTokens,
+                omittedTokens: report.omittedTokens,
+                toolCalls: 12,
+                latencyMilliseconds: 8_400,
+                approvalInterruptions: 1,
+                retries: 1,
+                failures: 0,
+                completionQualityEvidence: 3
+            )
             return IslandDebugSnapshot(
                 title: title,
                 summary: summary,
@@ -274,7 +299,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 islandSurface: .sessionList(),
                 sessions: sessions,
                 selectedSessionID: sessions[0].id,
-                contextEvidence: [evidence]
+                contextEvidence: [evidence],
+                efficiencyTelemetry: [telemetry]
             )
         }
     }

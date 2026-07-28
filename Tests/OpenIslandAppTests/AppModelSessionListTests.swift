@@ -1396,6 +1396,48 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    @MainActor
+    func efficiencyTelemetryIsSelectedSessionScopedAndExportsPseudonymousIDs() throws {
+        let model = AppModel()
+        let first = listSession(id: "efficiency-one", phase: .running, updatedAt: .now)
+        let second = listSession(id: "efficiency-two", phase: .running, updatedAt: .now)
+        model.state = SessionState(sessions: [first, second])
+        model.selectedSessionID = first.id
+
+        model.recordEfficiencyTelemetry(OrbitEfficiencyTelemetry(
+            sessionID: second.id,
+            adapter: "codex",
+            provider: "openai",
+            route: "austin-router",
+            freshness: .fresh,
+            confidence: .estimated,
+            inputTokens: 20
+        ))
+        #expect(model.selectedEfficiencyAggregate == nil)
+
+        model.recordEfficiencyTelemetry(OrbitEfficiencyTelemetry(
+            sessionID: first.id,
+            taskID: "task-one",
+            adapter: "codex",
+            provider: "openai",
+            route: "austin-router",
+            freshness: .fresh,
+            confidence: .estimated,
+            inputTokens: 40,
+            outputTokens: 5
+        ))
+
+        #expect(model.selectedEfficiencyAggregate?.samples == 1)
+        #expect(model.selectedEfficiencyAggregate?.inputTokens == 40)
+
+        let data = try model.redactedEfficiencyExport(sessionID: first.id, taskID: "task-one")
+        let json = String(decoding: data, as: UTF8.self)
+        #expect(!json.contains(first.id))
+        #expect(!json.contains("task-one"))
+        #expect(json.contains("sessionReference"))
+    }
+
+    @Test
     func recoveredSessionMatchesLiveGhosttyProcessByCWDWhenMultipleCandidatesExist() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
