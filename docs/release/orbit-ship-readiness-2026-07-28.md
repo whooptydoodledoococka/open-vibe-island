@@ -3,7 +3,7 @@
 ## Scope
 
 This receipt covers the isolated integration branch `feat/orbit-ship-integration`
-at commit `2d6f4567a4b8a4951f06add5207b1c635f0f722d`. It proves local source,
+at commit `037075d28a860b7521bde139d30ad1df28896e12`. It proves local source,
 build, fixture, visual/accessibility-harness, and bounded runtime behavior. It
 does not claim signing, notarization, device transport, publication, push, or
 deployment.
@@ -17,6 +17,10 @@ deployment.
   capability scoped and receipt backed. Source acknowledgement is never
   inferred: terminal text delivery stops at `delivered`; unsupported cancel
   and stale steer fail closed as `rejected`.
+- Hermes control uses Hermes's documented cookie-authenticated loopback
+  contracts for pending approval, approval response, steer, cancel, and stream
+  status. Remote URLs, invalid identity, stale 409, auth failure, malformed
+  payloads, oversized responses, and rejected actions fail closed.
 - OpenCode and FreeBuff input is explicit-file-only, bounded, regular-file-only,
   symlink resistant, and separate from the byte-only observation host.
 - Observation has one owner, coalescing, bounded exponential backoff, watchdog
@@ -31,7 +35,7 @@ deployment.
 
 - `scripts/harness.sh ci`: PASS.
 - XCTest: 24 executed, one intentional Ghostty integration skip, zero failures.
-- Swift Testing: 453 tests in 55 suites, zero failures.
+- Swift Testing: 458 tests in 56 suites, zero failures.
 - `scripts/harness.sh smoke-all`: PASS for all 12 scenarios.
 - Visual/AX evidence:
   `output/harness/smoke-all-20260728-163953`.
@@ -42,7 +46,7 @@ deployment.
   acceptance budgets.
 - Harness process exited cleanly and `OpenIslandApp` was `NOT_RUNNING`.
 - Built executable SHA-256:
-  `93d3940c83db3c0089a9af47bf9cdf4dfb5afb48f1bc4492b2450237ecda1f3e`.
+  `c053a059a1773be46224975af45268fea4c0d20f693611b0598177f489f51034`.
 
 ## Changed artifact hashes
 
@@ -58,10 +62,12 @@ deployment.
 | `Sources/OpenIslandCore/OrbitExternalFeedLoader.swift` | `d5b95ac95b7f5abdee164ed92f2222431c95566f4623851b937f813586390e58` |
 | `Sources/OpenIslandCore/OrbitExternalObservationRuntime.swift` | `15a6478828162037ffc4ab1bdbf779fc9ffc517e20ad282d3ee5e42cee07e36b` |
 | `Sources/OpenIslandCore/OrbitReceipt.swift` | `ec992e9c251433583a4006d4dd8e98d7656791ed6d51d7e8a5c7f2da0f7c6c57` |
+| `Sources/OpenIslandCore/HermesControlAdapter.swift` | `edd23d1c5109a3dabf9f49c8187eb7403d5b56391747fc8e088176418645c8ec` |
 | `Tests/OpenIslandAppTests/AppModelSessionListTests.swift` | `c80a457d44c05575b5103bddc944a90a179d562398bbe03c9d0ad72f4565ae09` |
 | `Tests/OpenIslandAppTests/OverlayTransitionPolicyTests.swift` | `68ca2b9f4ed2461ae7379d7fc1bc35bf698e1f0f909a6360d5d1c6244011670c` |
 | `Tests/OpenIslandAppTests/InstallHooksHintPolicyTests.swift` | `7f994e9e585621509a8a02f1d0a9207145a9a7a4d5066512c51021950ad39cdc` |
 | `Tests/OpenIslandCoreTests/HermesGatewayAdapterTests.swift` | `c244d6492a1056203ef735d2d9db7e48bae6a6bf5a27efe1a21cbbf28ddde519` |
+| `Tests/OpenIslandCoreTests/HermesControlAdapterTests.swift` | `52265c759a8ac9481b72cc2116bd914b759ced78deae2ce241683f33ec9a4c39` |
 | `Tests/OpenIslandCoreTests/OrbitExternalFeedLoaderTests.swift` | `680156e4e8a9ea6707388c4ebe8e9e53565fa70efd992d10733558c82c207a08` |
 | `Tests/OpenIslandCoreTests/OrbitExternalObservationRuntimeTests.swift` | `48a9d7ecb8b6c5df4c0b2cf91f64fb1d079d5bda8692b785247d276cb18fdcf9` |
 
@@ -71,7 +77,7 @@ deployment.
 |---|---|---|
 | Live Codex/Hermes credentials and routing | HOLD | User-approved credentials, loopback ownership audit, live correlated receipt test |
 | Native adapter cancellation | FAIL CLOSED | Adapter-specific bounded cancellation API plus acknowledgement fixture/live proof |
-| Hermes approval/completion parity | HOLD | Documented bounded Hermes event/action API, correlated acknowledgement fixtures, then live loopback proof |
+| Hermes live approval/completion parity | HOLD | Cookie-authenticated live proof that 8642 metadata IDs correlate exactly with 8787 control session/stream IDs |
 | iPhone/Watch relay | HOLD | Signed-device pairing, stale/replay/mismatch and reconnect tests |
 | Manual VoiceOver traversal | HOLD | Human AX traversal on the target Mac and recorded findings |
 | Signing/notarization/install | HOLD | Developer ID/provisioning approval, Gatekeeper/notarization/install receipt |
@@ -81,13 +87,14 @@ deployment.
 
 The integration work is split into reversible commits:
 
-1. `2d6f456` quiet first-run integration hint and Hermes failure tests.
-2. `19886e2` truthful companion-action receipts.
-3. `d251687` centralized snappy notch motion.
-4. `4fc3080` docs-index repair.
-5. `f939558` explicit observation restart.
-6. `f1bfcfb` reduced-motion and approval accessibility.
-7. `c8ead8e` bounded external-feed loader.
+1. `037075d` bounded Hermes control adapter and failure contracts.
+2. `2d6f456` quiet first-run integration hint and Hermes failure tests.
+3. `19886e2` truthful companion-action receipts.
+4. `d251687` centralized snappy notch motion.
+5. `4fc3080` docs-index repair.
+6. `f939558` explicit observation restart.
+7. `f1bfcfb` reduced-motion and approval accessibility.
+8. `c8ead8e` bounded external-feed loader.
 
 To remove one slice, create a new rollback branch from the current integration
 head and use `git revert <commit>`, then rerun `scripts/harness.sh ci` and
