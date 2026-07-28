@@ -32,6 +32,29 @@ struct HermesGatewayAdapterTests {
     }
 
     @Test
+    func nonLoopbackGatewayFailsClosedBeforeNetworkUse() async {
+        let adapter = HermesGatewayAdapter(
+            baseURL: URL(string: "https://example.invalid")!
+        )
+
+        let snapshot = await adapter.fetchSnapshot()
+
+        #expect(snapshot.gateway == .unavailable)
+        #expect(snapshot.sessions == .unavailable)
+        #expect(snapshot.approvals == .unavailable)
+        #expect(snapshot.completions == .unavailable)
+        #expect(snapshot.detail.contains("loopback"))
+    }
+
+    @Test
+    func malformedSessionEnvelopeIsRejected() {
+        let malformed = Data(#"{"object":"session","data":[]}"#.utf8)
+        #expect(throws: (any Error).self) {
+            _ = try HermesGatewayAdapter.decodeSessions(malformed)
+        }
+    }
+
+    @Test
     func unsupportedEventClaimsRemainUnavailable() {
         #expect(!HermesGatewayAdapter.supportsApprovalEvents)
         #expect(!HermesGatewayAdapter.supportsCompletionEvents)

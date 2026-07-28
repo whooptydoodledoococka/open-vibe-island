@@ -16,6 +16,20 @@ private struct ContentHeightKey: PreferenceKey {
     }
 }
 
+enum InstallHooksHintPolicy {
+    static func shouldShow(
+        hasInstalledAgent: Bool,
+        onboardingCompleted: Bool,
+        hasSessions: Bool,
+        isResolvingSessions: Bool
+    ) -> Bool {
+        !hasInstalledAgent
+            && !onboardingCompleted
+            && !hasSessions
+            && !isResolvingSessions
+    }
+}
+
 /// Auto-height container: renders content directly (auto-sizing).
 /// When content exceeds maxHeight, wraps in ScrollView at fixed maxHeight.
 private struct AutoHeightScrollView<Content: View>: View {
@@ -466,10 +480,16 @@ struct IslandPanelView: View {
                         .padding(.horizontal, 18)
                 }
 
-                if !model.hasAnyInstalledAgent {
+                if InstallHooksHintPolicy.shouldShow(
+                    hasInstalledAgent: model.hasAnyInstalledAgent,
+                    onboardingCompleted: model.firstLaunchCompleted,
+                    hasSessions: !model.islandListSessions.isEmpty,
+                    isResolvingSessions: model.isResolvingInitialLiveSessions
+                ) {
                     installHooksHint
                         .padding(.horizontal, 18)
                         .padding(.top, 8)
+                        .transition(.opacity)
                 }
 
                 if model.shouldShowSessionBootstrapPlaceholder {
@@ -636,11 +656,9 @@ struct IslandPanelView: View {
         .accessibilityLabel("External agents. \(summary). Inspection only. No actions available.")
     }
 
-    /// Persistent hint at the top of the expanded island while no agent
-    /// hooks are installed. Decoupled from session presence — process
-    /// discovery routinely surfaces sessions even on a freshly cleaned
-    /// install, so the empty-state branch alone never reaches users who
-    /// already run an agent.
+    /// First-run setup hint. Once onboarding is completed or Orbit already
+    /// has session evidence, integration health belongs in Preferences rather
+    /// than becoming a persistent banner on every island expansion.
     private var installHooksHint: some View {
         Button {
             model.showOnboarding()
