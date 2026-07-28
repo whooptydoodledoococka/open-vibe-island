@@ -58,6 +58,7 @@ This index is the repository map for humans and coding agents. Read these files 
 ## Release
 
 - [docs/release-signing.md](./release-signing.md) for code signing and notarization details
+- [docs/release/orbit-ship-readiness-2026-07-28.md](./release/orbit-ship-readiness-2026-07-28.md) for the current local ship-readiness receipt, rollback, hashes, and residual gates
 
 ## Investigations
 
