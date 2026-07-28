@@ -24,6 +24,35 @@ struct OrbitMotionPolicy: Equatable, Sendable {
     }
 }
 
+/// One compact motion vocabulary for the notch surface. Primary geometry
+/// settles quickly; secondary feedback is shorter; collapse is faster than
+/// expansion. Reduce Motion is applied by `OrbitMotionPolicy` at each callsite.
+enum OrbitMotionTokens {
+    static let expandDuration: TimeInterval = 0.20
+    static let collapseDuration: TimeInterval = 0.14
+    static let secondaryDuration: TimeInterval = 0.12
+    static let popDuration: TimeInterval = 0.16
+    static let openedSurfaceUnmountDelay: TimeInterval = 0.18
+    static let dampingFraction: Double = 0.88
+    static let popDampingFraction: Double = 0.90
+
+    static var expand: Animation {
+        .spring(response: expandDuration, dampingFraction: dampingFraction, blendDuration: 0)
+    }
+
+    static var collapse: Animation {
+        .easeOut(duration: collapseDuration)
+    }
+
+    static var secondary: Animation {
+        .easeOut(duration: secondaryDuration)
+    }
+
+    static var pop: Animation {
+        .spring(response: popDuration, dampingFraction: popDampingFraction, blendDuration: 0)
+    }
+}
+
 @MainActor
 @Observable
 final class OverlayUICoordinator {

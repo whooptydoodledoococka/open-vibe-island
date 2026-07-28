@@ -18,6 +18,22 @@ struct OverlayTransitionPolicyTests {
     }
 
     @Test
+    func notchMotionTokensStayInsideSnappyProductBounds() {
+        #expect(OrbitMotionTokens.expandDuration >= 0.16)
+        #expect(OrbitMotionTokens.expandDuration <= 0.22)
+        #expect(OrbitMotionTokens.collapseDuration >= 0.10)
+        #expect(OrbitMotionTokens.collapseDuration < OrbitMotionTokens.expandDuration)
+        #expect(OrbitMotionTokens.secondaryDuration >= 0.10)
+        #expect(OrbitMotionTokens.secondaryDuration <= 0.16)
+        #expect(OrbitMotionTokens.popDuration >= 0.10)
+        #expect(OrbitMotionTokens.popDuration <= 0.18)
+        #expect(OrbitMotionTokens.openedSurfaceUnmountDelay >= OrbitMotionTokens.collapseDuration)
+        #expect(OrbitMotionTokens.openedSurfaceUnmountDelay <= 0.22)
+        #expect(OrbitMotionTokens.dampingFraction >= 0.85)
+        #expect(OrbitMotionTokens.popDampingFraction >= 0.85)
+    }
+
+    @Test
     func newTransitionInvalidatesPreviousToken() {
         var policy = OverlayTransitionPolicy()
         let first = policy.beginTransition()
@@ -37,7 +53,7 @@ struct OverlayTransitionPolicyTests {
 
     @Test
     func preservesExistingTransitionDelays() {
-        #expect(OverlayTransitionPolicy.popDelay == 0.3)
+        #expect(OverlayTransitionPolicy.popDelay == OrbitMotionTokens.popDuration)
         #expect(OverlayTransitionPolicy.bootOpenDelay == 0.5)
         #expect(OverlayTransitionPolicy.bootCloseDelay == 1.5)
     }

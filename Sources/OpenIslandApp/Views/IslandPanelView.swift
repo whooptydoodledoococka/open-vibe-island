@@ -73,10 +73,10 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-private let closeAnimation = Animation.smooth(duration: 0.3)
-private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
-private let openedSurfaceUnmountDelay: TimeInterval = 0.36
+private let openAnimation = OrbitMotionTokens.expand
+private let closeAnimation = OrbitMotionTokens.collapse
+private let popAnimation = OrbitMotionTokens.pop
+private let openedSurfaceUnmountDelay = OrbitMotionTokens.openedSurfaceUnmountDelay
 
 private struct ConditionalDrawingGroup: ViewModifier {
     let enabled: Bool
@@ -248,7 +248,7 @@ struct IslandPanelView: View {
         .animation(motionPolicy.animation(notchTransitionAnimation), value: model.notchStatus)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(motionPolicy.animation(.spring(response: 0.38, dampingFraction: 0.8))) {
+            withAnimation(motionPolicy.animation(OrbitMotionTokens.secondary)) {
                 isHovering = hovering
             }
         }
@@ -2338,7 +2338,7 @@ private struct IslandSessionRow: View {
     private func detailToggleButton(isOpen: Bool) -> some View {
         Button {
             guard isInteractive else { return }
-            withAnimation(motionPolicy.animation(.easeInOut(duration: 0.2))) {
+            withAnimation(motionPolicy.animation(OrbitMotionTokens.secondary)) {
                 detailOverride = !isOpen
             }
         } label: {
@@ -2568,7 +2568,7 @@ private struct StructuredQuestionPromptView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilitySortPriority(Double(question.options.count - optionIndex))
         .onHover { hovering in
-            withAnimation(OrbitMotionPolicy(reducesMotion: accessibilityReduceMotion).animation(.easeInOut(duration: 0.12))) {
+            withAnimation(OrbitMotionPolicy(reducesMotion: accessibilityReduceMotion).animation(OrbitMotionTokens.secondary)) {
                 hoveredOptionKey = hovering ? key : (hoveredOptionKey == key ? nil : hoveredOptionKey)
             }
         }

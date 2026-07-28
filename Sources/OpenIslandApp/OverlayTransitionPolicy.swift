@@ -20,7 +20,7 @@ struct OverlayTransitionPolicy: Sendable {
         token.generation == generation
     }
 
-    static let popDelay: TimeInterval = 0.3
+    static let popDelay: TimeInterval = OrbitMotionTokens.popDuration
     static let bootOpenDelay: TimeInterval = 0.5
     static let bootCloseDelay: TimeInterval = 1.5
 }

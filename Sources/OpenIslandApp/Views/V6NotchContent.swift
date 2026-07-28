@@ -281,7 +281,7 @@ struct V6ClosedPill: View {
         }
         .frame(width: width, height: height)
         .animation(
-            motionPolicy.animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.45)),
+            motionPolicy.animation(OrbitMotionTokens.secondary),
             value: AnyHashable([
                 AnyHashable(label ?? ""),
                 AnyHashable(rightSlot.map(RightSlotKey.init) ?? .none),
