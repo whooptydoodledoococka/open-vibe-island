@@ -629,6 +629,9 @@ final class AppModel {
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
 
     @ObservationIgnored
+    private let terminalTextAction: @Sendable (String, AgentSession) -> Bool
+
+    @ObservationIgnored
     private let isNotificationSessionAlreadyFrontmost: @Sendable (AgentSession) async -> Bool
 
 
@@ -694,6 +697,9 @@ final class AppModel {
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
         },
+        terminalTextAction: @escaping @Sendable (String, AgentSession) -> Bool = { text, session in
+            TerminalTextSender.send(text, to: session)
+        },
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { session in
             await ForegroundTerminalSessionProbe().matches(session: session)
         },
@@ -702,6 +708,7 @@ final class AppModel {
     ) {
         self.settingsStore = settingsStore ?? OrbitSettingsStore()
         self.terminalJumpAction = terminalJumpAction
+        self.terminalTextAction = terminalTextAction
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         self.hermesGatewayAdapter = hermesGatewayAdapter ?? HermesGatewayAdapter(
             bearerToken: ProcessInfo.processInfo.environment["ORBIT_HERMES_GATEWAY_TOKEN"]
@@ -1680,23 +1687,74 @@ final class AppModel {
     }
 
     func replyToSession(_ session: AgentSession, text: String) {
-        dismissNotificationSurfaceIfPresent(for: session.id)
+        sendTextAction(to: session, text: text, action: .sessionReplied, verb: "reply")
+    }
+
+    func steerSession(_ session: AgentSession, text: String) {
+        sendTextAction(to: session, text: text, action: .sessionSteered, verb: "steer")
+    }
+
+    func cancelSession(_ session: AgentSession) {
+        receiptLedger.append(OrbitReceipt(
+            sessionID: session.id,
+            adapter: session.tool.rawValue,
+            action: .sessionCancelled,
+            scope: "session",
+            status: .rejected,
+            summary: "adapter does not expose bounded cancellation"
+        ))
+        lastActionMessage = "Cancel is unavailable for \(session.tool.displayName); no action was sent."
+    }
+
+    private func sendTextAction(
+        to session: AgentSession,
+        text: String,
+        action: OrbitReceipt.Action,
+        verb: String
+    ) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let current = state.session(id: session.id),
+              current.isProcessAlive,
+              current.attachmentState == .attached,
+              current.jumpTarget != nil else {
+            receiptLedger.append(OrbitReceipt(
+                sessionID: session.id,
+                adapter: session.tool.rawValue,
+                action: action,
+                scope: "session",
+                status: .rejected,
+                summary: "stale, missing, or unavailable session target"
+            ))
+            lastActionMessage = "Cannot \(verb): the session target is unavailable or stale."
+            return
+        }
+
+        dismissNotificationSurfaceIfPresent(for: current.id)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
-
-        lastActionMessage = "Sending reply to \(session.title)…"
+        let receiptID = queueReceipt(
+            for: current,
+            action: action,
+            requestID: nil,
+            scope: "session",
+            summary: "\(verb) decision captured"
+        )
+        updateReceipt(receiptID, status: .deliveryPending)
+        lastActionMessage = "Sending \(verb) to \(current.title)…"
+        let terminalTextAction = terminalTextAction
 
         Task { [weak self] in
             let success = await Task.detached(priority: .userInitiated) {
-                TerminalTextSender.send(text, to: session)
+                terminalTextAction(trimmed, current)
             }.value
-
-            self?.lastActionMessage = success
-                ? "Sent reply to \(session.title)."
-                : "Failed to send reply to \(session.title)."
+            guard let self else { return }
+            self.updateReceipt(receiptID, status: success ? .delivered : .deliveryFailed)
+            self.lastActionMessage = success
+                ? "Sent \(verb) to \(current.title); source acknowledgement is pending."
+                : "Failed to send \(verb) to \(current.title)."
         }
     }
-
 
     private func queueReceipt(
         for session: AgentSession,

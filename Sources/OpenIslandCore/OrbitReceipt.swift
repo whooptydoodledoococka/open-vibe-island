@@ -8,6 +8,9 @@ public struct OrbitReceipt: Codable, Equatable, Identifiable, Sendable {
         case permissionAllowedOnce
         case permissionAllowedWithUpdates
         case questionAnswered
+        case sessionReplied
+        case sessionSteered
+        case sessionCancelled
     }
 
     public enum Status: String, Codable, Sendable {

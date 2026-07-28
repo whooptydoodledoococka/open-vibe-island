@@ -20,6 +20,9 @@ struct OrbitReceiptStatusPresentation: Equatable {
         case .permissionAllowedOnce: "Allowed once"
         case .permissionAllowedWithUpdates: "Permission updated"
         case .questionAnswered: "Answer submitted"
+        case .sessionReplied: "Reply sent"
+        case .sessionSteered: "Steer sent"
+        case .sessionCancelled: "Cancel requested"
         }
 
         return switch receipt.status {

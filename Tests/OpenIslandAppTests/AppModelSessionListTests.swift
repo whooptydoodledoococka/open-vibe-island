@@ -1562,6 +1562,52 @@ struct AppModelSessionListTests {
         #expect(claudeSessions.count == 2)
     }
 
+    @Test
+    @MainActor
+    func replyCreatesDeliveredReceiptWithoutClaimingAcknowledgement() async throws {
+        let model = AppModel(terminalTextAction: { _, _ in true })
+        var session = listSession(id: "reply-receipt", phase: .running, updatedAt: .now)
+        session.isProcessAlive = true
+        model.state = SessionState(sessions: [session])
+
+        model.replyToSession(session, text: "Continue with the focused test.")
+        try await Task.sleep(for: .milliseconds(40))
+
+        let history = model.receipts.filter { $0.action == .sessionReplied }
+        #expect(history.map(\.status) == [.decisionCaptured, .deliveryPending, .delivered])
+        #expect(!history.contains { $0.status == .acknowledged })
+    }
+
+    @Test
+    @MainActor
+    func staleSteerFailsClosedWithoutDelivery() async throws {
+        let model = AppModel(terminalTextAction: { _, _ in
+            Issue.record("stale steer must not reach the terminal sender")
+            return true
+        })
+        let stale = listSession(id: "stale-steer", phase: .running, updatedAt: .now)
+
+        model.steerSession(stale, text: "Change direction.")
+        try await Task.sleep(for: .milliseconds(20))
+
+        let receipt = try #require(model.receipts.last)
+        #expect(receipt.action == .sessionSteered)
+        #expect(receipt.status == .rejected)
+    }
+
+    @Test
+    @MainActor
+    func cancelFailsClosedWhenAdapterHasNoBoundedCancellation() {
+        let model = AppModel()
+        let session = listSession(id: "unsupported-cancel", phase: .running, updatedAt: .now)
+
+        model.cancelSession(session)
+
+        #expect(model.receipts.last?.action == .sessionCancelled)
+        #expect(model.receipts.last?.status == .rejected)
+        #expect(model.lastActionMessage.contains("unavailable"))
+    }
+
     private func listSession(id: String, phase: SessionPhase, updatedAt: Date) -> AgentSession {
         AgentSession(
             id: id,
