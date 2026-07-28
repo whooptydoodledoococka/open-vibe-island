@@ -359,14 +359,27 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var origin: SessionOrigin?
     public var attachmentState: SessionAttachmentState
     public var phase: SessionPhase
+    public var canonicalStatus: CanonicalSessionStatus
+    public var toolVerb: SessionToolVerb?
+    public var launcherBundleID: String?
+    public var notificationsSilenced: Bool
+    public var silencePromptContext: String?
     public var summary: String
     public var updatedAt: Date
     /// First time this session appeared in local state. Written once and
     /// persisted so the closed-island's right-slot grid can keep a stable
     /// display order regardless of how the panel list is sorted.
     public var firstSeenAt: Date
-    public var permissionRequest: PermissionRequest?
-    public var questionPrompt: QuestionPrompt?
+    public var permissionRequests: [PermissionRequest]
+    public var questionPrompts: [QuestionPrompt]
+    public var permissionRequest: PermissionRequest? {
+        get { permissionRequests.first }
+        set { permissionRequests = newValue.map { [$0] } ?? [] }
+    }
+    public var questionPrompt: QuestionPrompt? {
+        get { questionPrompts.first }
+        set { questionPrompts = newValue.map { [$0] } ?? [] }
+    }
     public var jumpTarget: JumpTarget?
     public var codexMetadata: CodexSessionMetadata?
     public var claudeMetadata: ClaudeSessionMetadata?
@@ -413,12 +426,19 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         firstSeenAt: Date? = nil,
         permissionRequest: PermissionRequest? = nil,
         questionPrompt: QuestionPrompt? = nil,
+        permissionRequests: [PermissionRequest] = [],
+        questionPrompts: [QuestionPrompt] = [],
         jumpTarget: JumpTarget? = nil,
         codexMetadata: CodexSessionMetadata? = nil,
         claudeMetadata: ClaudeSessionMetadata? = nil,
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
-        cursorMetadata: CursorSessionMetadata? = nil
+        cursorMetadata: CursorSessionMetadata? = nil,
+        canonicalStatus: CanonicalSessionStatus? = nil,
+        toolVerb: SessionToolVerb? = nil,
+        launcherBundleID: String? = nil,
+        notificationsSilenced: Bool = false,
+        silencePromptContext: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -426,11 +446,20 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.origin = origin
         self.attachmentState = attachmentState
         self.phase = phase
+        self.canonicalStatus = canonicalStatus ?? phase.canonicalStatus
+        self.toolVerb = toolVerb
+        self.launcherBundleID = launcherBundleID
+        self.notificationsSilenced = notificationsSilenced
+        self.silencePromptContext = silencePromptContext
         self.summary = summary
         self.updatedAt = updatedAt
         self.firstSeenAt = firstSeenAt ?? updatedAt
-        self.permissionRequest = permissionRequest
-        self.questionPrompt = questionPrompt
+        self.permissionRequests = permissionRequests.isEmpty
+            ? permissionRequest.map { [$0] } ?? []
+            : permissionRequests
+        self.questionPrompts = questionPrompts.isEmpty
+            ? questionPrompt.map { [$0] } ?? []
+            : questionPrompts
         self.jumpTarget = jumpTarget
         self.codexMetadata = codexMetadata
         self.claudeMetadata = claudeMetadata
@@ -446,9 +475,16 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case origin
         case attachmentState
         case phase
+        case canonicalStatus
+        case toolVerb
+        case launcherBundleID
+        case notificationsSilenced
+        case silencePromptContext
         case summary
         case updatedAt
         case firstSeenAt
+        case permissionRequests
+        case questionPrompts
         case permissionRequest
         case questionPrompt
         case jumpTarget
@@ -467,11 +503,20 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin)
         attachmentState = try container.decodeIfPresent(SessionAttachmentState.self, forKey: .attachmentState) ?? .stale
         phase = try container.decode(SessionPhase.self, forKey: .phase)
+        canonicalStatus = try container.decodeIfPresent(CanonicalSessionStatus.self, forKey: .canonicalStatus) ?? phase.canonicalStatus
+        toolVerb = try container.decodeIfPresent(SessionToolVerb.self, forKey: .toolVerb)
+        launcherBundleID = try container.decodeIfPresent(String.self, forKey: .launcherBundleID)
+        notificationsSilenced = try container.decodeIfPresent(Bool.self, forKey: .notificationsSilenced) ?? false
+        silencePromptContext = try container.decodeIfPresent(String.self, forKey: .silencePromptContext)
         summary = try container.decode(String.self, forKey: .summary)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         firstSeenAt = try container.decodeIfPresent(Date.self, forKey: .firstSeenAt) ?? updatedAt
-        permissionRequest = try container.decodeIfPresent(PermissionRequest.self, forKey: .permissionRequest)
-        questionPrompt = try container.decodeIfPresent(QuestionPrompt.self, forKey: .questionPrompt)
+        permissionRequests = try container.decodeIfPresent([PermissionRequest].self, forKey: .permissionRequests)
+            ?? container.decodeIfPresent(PermissionRequest.self, forKey: .permissionRequest).map { [$0] }
+            ?? []
+        questionPrompts = try container.decodeIfPresent([QuestionPrompt].self, forKey: .questionPrompts)
+            ?? container.decodeIfPresent(QuestionPrompt.self, forKey: .questionPrompt).map { [$0] }
+            ?? []
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         codexMetadata = try container.decodeIfPresent(CodexSessionMetadata.self, forKey: .codexMetadata)
         claudeMetadata = try container.decodeIfPresent(ClaudeSessionMetadata.self, forKey: .claudeMetadata)
@@ -488,9 +533,16 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(origin, forKey: .origin)
         try container.encode(attachmentState, forKey: .attachmentState)
         try container.encode(phase, forKey: .phase)
+        try container.encode(canonicalStatus, forKey: .canonicalStatus)
+        try container.encodeIfPresent(toolVerb, forKey: .toolVerb)
+        try container.encodeIfPresent(launcherBundleID, forKey: .launcherBundleID)
+        try container.encode(notificationsSilenced, forKey: .notificationsSilenced)
+        try container.encodeIfPresent(silencePromptContext, forKey: .silencePromptContext)
         try container.encode(summary, forKey: .summary)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(firstSeenAt, forKey: .firstSeenAt)
+        try container.encode(permissionRequests, forKey: .permissionRequests)
+        try container.encode(questionPrompts, forKey: .questionPrompts)
         try container.encodeIfPresent(permissionRequest, forKey: .permissionRequest)
         try container.encodeIfPresent(questionPrompt, forKey: .questionPrompt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)

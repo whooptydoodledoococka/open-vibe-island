@@ -86,6 +86,19 @@ public enum ManagedHooksBinary {
 }
 
 public enum HooksBinaryLocator {
+    public static func remoteHookBinaryName(os: String, architecture: String) -> String {
+        "orbit-hook-\(os)-\(architecture)"
+    }
+
+    public static var currentRemoteHookBinaryName: String {
+        #if arch(arm64)
+        let architecture = "arm64"
+        #else
+        let architecture = "amd64"
+        #endif
+        return remoteHookBinaryName(os: "darwin", architecture: architecture)
+    }
+
     public static func locate(
         fileManager: FileManager = .default,
         currentDirectory: URL? = nil,
@@ -100,6 +113,10 @@ public enum HooksBinaryLocator {
         let currentDirectory = currentDirectory
             ?? URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
         let candidates = [
+            executableDirectory?
+                .deletingLastPathComponent()
+                .appendingPathComponent("Resources/Hooks")
+                .appendingPathComponent(currentRemoteHookBinaryName),
             executableDirectory?.appendingPathComponent("OpenIslandHooks"),
             executableDirectory?.deletingLastPathComponent().appendingPathComponent("OpenIslandHooks"),
             executableDirectory?.deletingLastPathComponent().appendingPathComponent("Helpers/OpenIslandHooks"),

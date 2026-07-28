@@ -108,6 +108,7 @@ struct IslandPanelView: View {
     @State private var showingQuitConfirmation = false
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
+    @Namespace private var surfaceMorph
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -212,11 +213,25 @@ struct IslandPanelView: View {
             ZStack(alignment: .top) {
                 if shouldRenderOpenedSurface {
                     openedSurface(width: openedWidth, height: openedHeight)
+                        .matchedGeometryEffect(
+                            id: "orbit-surface-shell",
+                            in: surfaceMorph,
+                            properties: .frame,
+                            anchor: .top,
+                            isSource: usesOpenedVisualState
+                        )
                         .opacity(usesOpenedVisualState ? 1 : 0)
                         .allowsHitTesting(usesOpenedVisualState)
                 }
 
                 v6ClosedSurface()
+                    .matchedGeometryEffect(
+                        id: "orbit-surface-shell",
+                        in: surfaceMorph,
+                        properties: .frame,
+                        anchor: .top,
+                        isSource: !usesOpenedVisualState
+                    )
                     .opacity(usesOpenedVisualState ? 0 : 1)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
@@ -302,6 +317,13 @@ struct IslandPanelView: View {
             surfaceShape
                 .fill(V6Palette.ink)
                 .frame(width: surfaceWidth, height: surfaceHeight)
+
+            OrbitSurfaceBackdrop(
+                density: model.orbitStarDensity,
+                showStars: model.orbitStarfieldEnabled
+            )
+            .clipShape(surfaceShape)
+            .frame(width: surfaceWidth, height: surfaceHeight)
 
             VStack(spacing: 0) {
                 openedHeaderContent
@@ -414,27 +436,141 @@ struct IslandPanelView: View {
         .accessibilityLabel(accessibilityLabel ?? systemName)
     }
 
+    private var hasActionableFocus: Bool {
+        guard let phase = model.focusedSession?.phase else { return false }
+        return phase == .waitingForApproval || phase == .waitingForAnswer
+    }
+
     private var openedContent: some View {
         VStack(spacing: 8) {
-            if !model.hasAnyInstalledAgent {
-                installHooksHint
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            }
-
-            if model.shouldShowSessionBootstrapPlaceholder {
-                sessionBootstrapPlaceholder
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            } else if model.islandListSessions.isEmpty {
-                emptyState
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            } else {
+            if hasActionableFocus {
                 sessionList
+            } else {
+                hermesEvidenceStrip
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+
+                if let evidence = model.latestContextEvidence {
+                    contextEvidenceStrip(evidence)
+                        .padding(.horizontal, 18)
+                }
+
+                if !model.hasAnyInstalledAgent {
+                    installHooksHint
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                }
+
+                if model.shouldShowSessionBootstrapPlaceholder {
+                    sessionBootstrapPlaceholder
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                } else if model.islandListSessions.isEmpty {
+                    emptyState
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                } else {
+                    sessionList
+                }
             }
         }
         .padding(.bottom, 0)
+    }
+
+    private var hermesEvidenceStrip: some View {
+        let snapshot = model.hermesGatewaySnapshot
+        let gatewayColor: Color = snapshot.gateway == .live ? .green : .orange
+        let sessionLabel = snapshot.sessions == .live
+            ? "\(snapshot.sessionItems.count) metadata sessions · live"
+            : "sessions \(snapshot.sessions.rawValue)"
+        let accessibilitySummary = "Orbit Hermes gateway \(snapshot.gateway.rawValue). Sessions \(snapshot.sessions.rawValue). Approvals and completions unavailable. \(snapshot.detail)"
+
+        return HStack(spacing: 8) {
+            Circle()
+                .fill(gatewayColor)
+                .frame(width: 6, height: 6)
+            Text("ORBIT / HERMES")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.8)
+                .foregroundStyle(.white.opacity(0.88))
+            Text(sessionLabel)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.5))
+            Spacer(minLength: 6)
+            Text("approvals unavailable")
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.34))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.055))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(gatewayColor.opacity(0.28), lineWidth: 0.5)
+                )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private func contextEvidenceStrip(_ evidence: OrbitContextEvidence) -> some View {
+        let presentation = OrbitContextEvidencePresentation.make(for: evidence)
+        let tint = contextEvidenceTint(presentation.pressure)
+        let modelLabel = evidence.model.map { " via \($0)" } ?? ""
+        let accessibilitySummary = "\(presentation.title). \(presentation.detail). Source \(evidence.adapter)\(modelLabel). Retained \(evidence.budget.retainedTokens) tokens. Omitted \(evidence.budget.omittedTokens) tokens."
+
+        return HStack(spacing: 9) {
+            Image(systemName: presentation.systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(presentation.title)
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(1)
+                Text(presentation.detail)
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            Text(evidence.adapter.uppercased())
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .tracking(0.5)
+                .foregroundStyle(.white.opacity(0.34))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(tint.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(tint.opacity(0.18), lineWidth: 0.5)
+                )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private func contextEvidenceTint(_ pressure: OrbitContextEvidence.Pressure) -> Color {
+        switch pressure {
+        case .healthy:
+            IslandDesignPalette.Status.completed
+        case .elevated:
+            IslandDesignPalette.Status.waitingForAnswer
+        case .critical, .redactionRequired:
+            IslandDesignPalette.Status.waitingForApproval
+        case .stale, .unavailable:
+            V6Palette.paper.opacity(0.46)
+        }
     }
 
     /// Persistent hint at the top of the expanded island while no agent
@@ -576,6 +712,13 @@ struct IslandPanelView: View {
             }
 
             if isNotificationMode, let session = model.activeIslandCardSession {
+                if let receipt = model.approvalInboxProjection.latestReceipt,
+                   receipt.sessionID == session.id {
+                    receiptStatusBanner(receipt)
+                        .padding(.horizontal, sessionListSideInset)
+                        .padding(.vertical, 6)
+                }
+
                 IslandSessionRow(
                     session: session,
                     referenceDate: referenceDate,
@@ -587,8 +730,12 @@ struct IslandPanelView: View {
                     presentation: .notification,
                     sideInset: sessionListSideInset,
                     lang: model.lang,
-                    onApprove: { model.approvePermission(for: session.id, action: $0) },
-                    onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                    onApprove: { requestID, action in
+                        model.approvePermission(for: session.id, requestID: requestID, action: action)
+                    },
+                    onAnswer: { requestID, answer in
+                        model.answerQuestion(for: session.id, requestID: requestID, answer: answer)
+                    },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
                     onJump: { model.jumpToSession(session) }
@@ -628,8 +775,12 @@ struct IslandPanelView: View {
                                 isInteractive: model.notchStatus == .opened,
                                 sideInset: sessionListSideInset,
                                 lang: model.lang,
-                                onApprove: { model.approvePermission(for: session.id, action: $0) },
-                                onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                                onApprove: { requestID, action in
+                                    model.approvePermission(for: session.id, requestID: requestID, action: action)
+                                },
+                                onAnswer: { requestID, answer in
+                                    model.answerQuestion(for: session.id, requestID: requestID, answer: answer)
+                                },
                                 onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                                     ? { model.replyToSession(session, text: $0) } : nil,
                                 onJump: { model.jumpToSession(session) },
@@ -641,8 +792,69 @@ struct IslandPanelView: View {
             }
 
             if !isNotificationMode {
+                if let receipt = model.approvalInboxProjection.latestReceipt {
+                    receiptStatusBanner(receipt)
+                        .padding(.horizontal, sessionListSideInset)
+                        .padding(.top, 8)
+                }
                 sessionPanelFooter
             }
+        }
+    }
+
+    private func receiptStatusBanner(_ receipt: OrbitReceipt) -> some View {
+        let presentation = OrbitReceiptStatusPresentation.make(for: receipt)
+
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: presentation.systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(receiptStatusTint(presentation.tone))
+                .frame(width: 14, height: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(presentation.title)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(V6Palette.paper.opacity(0.82))
+                    .lineLimit(1)
+                Text(presentation.detail)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(V6Palette.paper.opacity(0.46))
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(receipt.scope.uppercased())
+                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                .tracking(0.5)
+                .foregroundStyle(V6Palette.paper.opacity(0.36))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(receiptStatusTint(presentation.tone).opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(receiptStatusTint(presentation.tone).opacity(0.18))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(presentation.title). \(presentation.detail). Scope \(receipt.scope).")
+    }
+
+    private func receiptStatusTint(_ tone: OrbitReceiptStatusPresentation.Tone) -> Color {
+        switch tone {
+        case .neutral:
+            V6Palette.paper.opacity(0.72)
+        case .pending:
+            IslandDesignPalette.Status.running
+        case .success:
+            IslandDesignPalette.Status.completed
+        case .failure:
+            IslandDesignPalette.Status.waitingForApproval
         }
     }
 
@@ -678,8 +890,12 @@ struct IslandPanelView: View {
                         isInteractive: model.notchStatus == .opened,
                         sideInset: sessionListSideInset,
                         lang: model.lang,
-                        onApprove: { model.approvePermission(for: session.id, action: $0) },
-                        onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                        onApprove: { requestID, action in
+                            model.approvePermission(for: session.id, requestID: requestID, action: action)
+                        },
+                        onAnswer: { requestID, answer in
+                            model.answerQuestion(for: session.id, requestID: requestID, answer: answer)
+                        },
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
                         onJump: { model.jumpToSession(session) },
@@ -1189,8 +1405,8 @@ private struct IslandSessionRow: View {
     var presentation: IslandSessionRowPresentation = .list
     var sideInset: CGFloat = 16
     var lang: LanguageManager = .shared
-    var onApprove: ((ApprovalAction) -> Void)?
-    var onAnswer: ((QuestionPromptResponse) -> Void)?
+    var onApprove: ((UUID, ApprovalAction) -> Void)?
+    var onAnswer: ((UUID, QuestionPromptResponse) -> Void)?
     var onReply: ((String) -> Void)?
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
@@ -1198,6 +1414,7 @@ private struct IslandSessionRow: View {
     @State private var isHighlighted = false
     @State private var detailOverride: Bool?
     @State private var replyText: String = ""
+    @State private var actionableRequestIndex = 0
 
     var body: some View {
         rowBody(referenceDate: referenceDate)
@@ -1256,6 +1473,9 @@ private struct IslandSessionRow: View {
             if !interactive {
                 detailOverride = nil
             }
+        }
+        .onChange(of: actionableRequestIDs) { _, requestIDs in
+            actionableRequestIndex = min(actionableRequestIndex, max(0, requestIDs.count - 1))
         }
     }
 
@@ -1565,18 +1785,87 @@ private struct IslandSessionRow: View {
         IslandDesignPalette.Status.tint(for: session.phase)
     }
 
+    private enum ActionableRequestItem {
+        case permission(PermissionRequest)
+        case question(QuestionPrompt)
+
+        var id: UUID {
+            switch self {
+            case let .permission(request): request.id
+            case let .question(prompt): prompt.id
+            }
+        }
+    }
+
+    private var actionableRequestItems: [ActionableRequestItem] {
+        session.permissionRequests.map(ActionableRequestItem.permission)
+            + session.questionPrompts.map(ActionableRequestItem.question)
+    }
+
+    private var actionableRequestIDs: [UUID] {
+        actionableRequestItems.map(\.id)
+    }
+
+    private var boundedActionableRequestIndex: Int {
+        min(actionableRequestIndex, max(0, actionableRequestItems.count - 1))
+    }
+
+    private var selectedActionableRequest: ActionableRequestItem? {
+        guard actionableRequestItems.indices.contains(boundedActionableRequestIndex) else {
+            return nil
+        }
+        return actionableRequestItems[boundedActionableRequestIndex]
+    }
+
     @ViewBuilder
     private var actionableBody: some View {
-        switch session.phase {
-        case .waitingForApproval:
-            approvalActionBody
-        case .waitingForAnswer:
-            questionActionBody
-        case .completed:
-            completionActionBody
-        case .running:
-            EmptyView()
+        VStack(alignment: .leading, spacing: 8) {
+            if actionableRequestItems.count > 1 {
+                actionableQueueNavigator
+            }
+
+            switch selectedActionableRequest {
+            case let .permission(request):
+                approvalActionBody(request: request)
+            case let .question(prompt):
+                questionActionBody(prompt: prompt)
+            case nil:
+                if session.phase == .completed {
+                    completionActionBody
+                }
+            }
         }
+    }
+
+    private var actionableQueueNavigator: some View {
+        HStack(spacing: 8) {
+            Text("REQUEST \(boundedActionableRequestIndex + 1) OF \(actionableRequestItems.count)")
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(V6Palette.paper.opacity(0.52))
+
+            Spacer(minLength: 0)
+
+            Button {
+                actionableRequestIndex = max(0, boundedActionableRequestIndex - 1)
+            } label: {
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.plain)
+            .disabled(boundedActionableRequestIndex == 0)
+            .accessibilityLabel("Previous request")
+
+            Button {
+                actionableRequestIndex = min(actionableRequestItems.count - 1, boundedActionableRequestIndex + 1)
+            } label: {
+                Image(systemName: "chevron.right")
+            }
+            .buttonStyle(.plain)
+            .disabled(boundedActionableRequestIndex >= actionableRequestItems.count - 1)
+            .accessibilityLabel("Next request")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Request \(boundedActionableRequestIndex + 1) of \(actionableRequestItems.count)")
     }
 
     private var shouldShowEmbeddedDetailBody: Bool {
@@ -1631,20 +1920,20 @@ private struct IslandSessionRow: View {
 
     // MARK: - Approval action area
 
-    private var approvalActionBody: some View {
+    private func approvalActionBody(request: PermissionRequest) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(lang.t("approval.toolPermissionRequested"))
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(V6Palette.paper.opacity(0.86))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(commandPreviewText)
+                Text(commandPreviewText(for: request))
                     .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                     .foregroundStyle(V6Palette.paper.opacity(0.78))
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let path = session.permissionRequest?.affectedPath.trimmedForNotificationCard,
-                   !path.isEmpty {
+                let path = request.affectedPath.trimmedForNotificationCard
+                if !path.isEmpty {
                     Text(path)
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(V6Palette.paper.opacity(0.42))
@@ -1661,11 +1950,11 @@ private struct IslandSessionRow: View {
             )
 
             HStack(spacing: 8) {
-                Button(session.permissionRequest?.secondaryActionTitle ?? lang.t("approval.deny")) { onApprove?(.deny) }
+                Button(request.secondaryActionTitle) { onApprove?(request.id, .deny) }
                     .buttonStyle(IslandActionButtonStyle(kind: .secondary, expands: true))
-                Button(session.permissionRequest?.primaryActionTitle ?? lang.t("approval.allowOnce")) { onApprove?(.allowOnce) }
+                Button(request.primaryActionTitle) { onApprove?(request.id, .allowOnce) }
                     .buttonStyle(IslandActionButtonStyle(kind: .warning, expands: true))
-                if let toolName = session.permissionRequest?.toolName {
+                if let toolName = request.toolName {
                     Button(lang.t("approval.alwaysAllow", toolName)) {
                         let rule = ClaudePermissionRuleValue(toolName: toolName)
                         let update = ClaudePermissionUpdate.addRules(
@@ -1673,7 +1962,7 @@ private struct IslandSessionRow: View {
                             rules: [rule],
                             behavior: .allow
                         )
-                        onApprove?(.allowWithUpdates([update]))
+                        onApprove?(request.id, .allowWithUpdates([update]))
                     }
                     .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
                 }
@@ -1683,11 +1972,11 @@ private struct IslandSessionRow: View {
 
     // MARK: - Question action area
 
-    private var questionActionBody: some View {
+    private func questionActionBody(prompt: QuestionPrompt) -> some View {
         StructuredQuestionPromptView(
-            prompt: session.questionPrompt,
+            prompt: prompt,
             lang: lang,
-            onAnswer: { onAnswer?($0) }
+            onAnswer: { onAnswer?(prompt.id, $0) }
         )
     }
 
@@ -1807,12 +2096,12 @@ private struct IslandSessionRow: View {
         }
     }
 
-    private var commandPreviewText: String {
+    private func commandPreviewText(for request: PermissionRequest) -> String {
         let preview = session.currentCommandPreviewText?.trimmedForNotificationCard
-        if let preview, !preview.isEmpty {
+        if request.id == session.permissionRequest?.id, let preview, !preview.isEmpty {
             return "$ \(preview)"
         }
-        return session.permissionRequest?.summary.trimmedForNotificationCard ?? session.summary.trimmedForNotificationCard
+        return request.summary.trimmedForNotificationCard
     }
 
     private var runningDetailText: String? {

@@ -95,9 +95,128 @@ struct SessionStateTests {
             )
         )
 
-        #expect(state.activeActionableSession?.phase == .waitingForAnswer)
+        #expect(state.activeActionableSession?.phase == .waitingForApproval)
         #expect(state.activeActionableSession?.questionPrompt?.options == ["Production", "Staging"])
-        #expect(state.activeActionableSession?.permissionRequest == nil)
+        #expect(state.activeActionableSession?.permissionRequest?.affectedPath == "src/auth/middleware.ts")
+    }
+
+    @Test
+    func sameSessionActionableRequestsQueueAndResolveByRequestID() {
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000101")!
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000102")!
+        let questionID = UUID(uuidString: "00000000-0000-0000-0000-000000000103")!
+        var state = SessionState()
+        state.apply(.sessionStarted(.init(
+            sessionID: "same-session",
+            title: "Parallel work",
+            tool: .claudeCode,
+            summary: "Queue safety",
+            timestamp: .now
+        )))
+        for (id, number) in [(firstID, 1), (secondID, 2)] {
+            state.apply(.permissionRequested(.init(
+                sessionID: "same-session",
+                request: .init(
+                    id: id,
+                    title: "Approval \(number)",
+                    summary: "Request \(number)",
+                    affectedPath: "/tmp/request-\(number)"
+                ),
+                timestamp: .now
+            )))
+        }
+        state.apply(.questionAsked(.init(
+            sessionID: "same-session",
+            prompt: .init(id: questionID, title: "Choose a mode", options: ["Safe", "Fast"]),
+            timestamp: .now
+        )))
+
+        var session = state.session(id: "same-session")
+        #expect(session?.permissionRequests.map(\.id) == [firstID, secondID])
+        #expect(session?.questionPrompts.map(\.id) == [questionID])
+        #expect(session?.phase == .waitingForApproval)
+
+        state.resolvePermission(sessionID: "same-session", resolution: .allowOnce())
+        #expect(state.session(id: "same-session")?.permissionRequests.count == 2)
+
+        state.resolvePermission(
+            sessionID: "same-session",
+            requestID: secondID,
+            resolution: .allowOnce()
+        )
+        session = state.session(id: "same-session")
+        #expect(session?.permissionRequests.map(\.id) == [firstID])
+        #expect(session?.phase == .waitingForApproval)
+
+        state.resolvePermission(
+            sessionID: "same-session",
+            requestID: UUID(),
+            resolution: .deny(message: "unknown")
+        )
+        #expect(state.session(id: "same-session")?.permissionRequests.map(\.id) == [firstID])
+
+        state.resolvePermission(
+            sessionID: "same-session",
+            requestID: firstID,
+            resolution: .allowOnce()
+        )
+        session = state.session(id: "same-session")
+        #expect(session?.phase == .waitingForAnswer)
+        #expect(session?.questionPrompt?.id == questionID)
+
+        state.answerQuestion(
+            sessionID: "same-session",
+            requestID: questionID,
+            response: .init(answer: "Safe")
+        )
+        session = state.session(id: "same-session")
+        #expect(session?.permissionRequests.isEmpty == true)
+        #expect(session?.questionPrompts.isEmpty == true)
+        #expect(session?.phase == .running)
+    }
+
+    @Test
+    func disconnectResolutionRemovesOnlyTheCorrelatedQueuedRequest() {
+        let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000201")!
+        let disconnectedID = UUID(uuidString: "00000000-0000-0000-0000-000000000202")!
+        let questionID = UUID(uuidString: "00000000-0000-0000-0000-000000000203")!
+        var state = SessionState()
+        state.apply(.sessionStarted(.init(
+            sessionID: "disconnect-queue",
+            title: "Parallel work",
+            tool: .claudeCode,
+            summary: "Queue safety",
+            timestamp: .now
+        )))
+        for id in [firstID, disconnectedID] {
+            state.apply(.permissionRequested(.init(
+                sessionID: "disconnect-queue",
+                request: .init(
+                    id: id,
+                    title: "Approval",
+                    summary: "Pending",
+                    affectedPath: "/tmp/disconnected-request"
+                ),
+                timestamp: .now
+            )))
+        }
+        state.apply(.questionAsked(.init(
+            sessionID: "disconnect-queue",
+            prompt: .init(id: questionID, title: "Choose", options: ["Safe"]),
+            timestamp: .now
+        )))
+
+        state.apply(.actionableStateResolved(.init(
+            sessionID: "disconnect-queue",
+            requestID: disconnectedID,
+            summary: "Hook process disconnected.",
+            timestamp: .now
+        )))
+
+        let session = state.session(id: "disconnect-queue")
+        #expect(session?.permissionRequests.map(\.id) == [firstID])
+        #expect(session?.questionPrompts.map(\.id) == [questionID])
+        #expect(session?.phase == .waitingForApproval)
     }
 
     /// Contract that the Claude Desktop fix (#510) relies on: a hook-managed
@@ -149,7 +268,11 @@ struct SessionStateTests {
                     tool: .claudeCode,
                     phase: .running,
                     summary: "Working",
-                    updatedAt: startedAt
+                    updatedAt: startedAt,
+                    questionPrompt: QuestionPrompt(
+                        title: "Which environment?",
+                        options: ["Production", "Staging"]
+                    )
                 ),
                 AgentSession(
                     id: "newer",

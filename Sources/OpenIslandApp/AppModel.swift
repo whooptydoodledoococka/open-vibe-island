@@ -28,6 +28,8 @@ final class AppModel {
     private static let legacyIslandSessionSortDefaultsKey = "appearance.island.v8.sessionSort"
     private static let legacyCompletedStaleThresholdDefaultsKey = "appearance.island.v8.completedStaleThreshold"
     private static let appearanceProfileSettingsDefaultsKey = "appearance.island.v8.settingsProfile"
+    private static let orbitStarfieldEnabledDefaultsKey = "appearance.orbit.starfield.enabled"
+    private static let orbitStarDensityDefaultsKey = "appearance.orbit.starfield.density"
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
@@ -52,6 +54,34 @@ final class AppModel {
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
+    private(set) var receiptLedger = OrbitReceiptLedger()
+    private(set) var contextEvidenceLedger = OrbitContextEvidenceLedger()
+    var hermesGatewaySnapshot = HermesGatewaySnapshot(
+        gateway: .unavailable,
+        sessions: .unavailable,
+        detail: "Hermes gateway has not been checked yet."
+    )
+
+    var receipts: [OrbitReceipt] {
+        receiptLedger.entries
+    }
+
+    var approvalInboxProjection: OrbitApprovalInboxProjection.Output {
+        OrbitApprovalInboxProjection.project(
+            sessions: state.sessions,
+            receipts: receipts,
+            focusedSessionID: selectedSessionID
+        )
+    }
+
+    var latestContextEvidence: OrbitContextEvidence? {
+        guard let selectedSessionID else { return nil }
+        return contextEvidenceLedger.latest(sessionID: selectedSessionID)
+    }
+
+    func recordContextEvidence(_ evidence: OrbitContextEvidence) {
+        contextEvidenceLedger.append(evidence)
+    }
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
     /// closed-island's right-slot surfaced set. Drives the grid's display
@@ -314,14 +344,30 @@ final class AppModel {
 
     var appearanceSettingsProfile: IslandAppearanceDisplayProfile = .topBar {
         didSet {
-            guard appearanceSettingsProfile != oldValue else { return }
-            UserDefaults.standard.set(appearanceSettingsProfile.rawValue, forKey: Self.appearanceProfileSettingsDefaultsKey)
+            guard hasFinishedInit, appearanceSettingsProfile != oldValue else { return }
+            appearanceSettingsSaveState = persistAppearanceSettingsSnapshot()
+        }
+    }
+
+    private(set) var appearanceSettingsSaveState: RuleSaveState = .idle
+
+    var orbitStarfieldEnabled: Bool = OrbitSurfaceStyle.defaultStarfieldEnabled {
+        didSet {
+            guard orbitStarfieldEnabled != oldValue else { return }
+            UserDefaults.standard.set(orbitStarfieldEnabled, forKey: Self.orbitStarfieldEnabledDefaultsKey)
+        }
+    }
+
+    var orbitStarDensity: OrbitStarDensity = .balanced {
+        didSet {
+            guard orbitStarDensity != oldValue else { return }
+            UserDefaults.standard.set(orbitStarDensity.rawValue, forKey: Self.orbitStarDensityDefaultsKey)
         }
     }
 
     private var notchAppearancePreferences = IslandAppearancePreferences() {
         didSet {
-            guard notchAppearancePreferences != oldValue else { return }
+            guard hasFinishedInit, notchAppearancePreferences != oldValue else { return }
             persistAppearancePreferences(notchAppearancePreferences, for: .notch)
             if activeAppearanceProfile == .notch { appearancePreferencesDidChange(oldValue: oldValue, newValue: notchAppearancePreferences) }
         }
@@ -329,7 +375,7 @@ final class AppModel {
 
     private var topBarAppearancePreferences = IslandAppearancePreferences() {
         didSet {
-            guard topBarAppearancePreferences != oldValue else { return }
+            guard hasFinishedInit, topBarAppearancePreferences != oldValue else { return }
             persistAppearancePreferences(topBarAppearancePreferences, for: .topBar)
             if activeAppearanceProfile == .topBar { appearancePreferencesDidChange(oldValue: oldValue, newValue: topBarAppearancePreferences) }
         }
@@ -414,18 +460,27 @@ final class AppModel {
         refreshOverlayPlacementIfVisible()
     }
 
+    private func persistAppearanceSettingsSnapshot() -> RuleSaveState {
+        var snapshot = settingsStore.load()
+        snapshot.selectedProfile = appearanceSettingsProfile
+        snapshot.notch = notchAppearancePreferences
+        snapshot.topBar = topBarAppearancePreferences
+        return settingsStore.save(snapshot)
+    }
+
     private func persistAppearancePreferences(
         _ preferences: IslandAppearancePreferences,
         for profile: IslandAppearanceDisplayProfile
     ) {
-        let defaults = UserDefaults.standard
-        defaults.set(preferences.rightSlot.rawValue, forKey: Self.appearanceDefaultsKey(profile, "rightSlot"))
-        defaults.set(preferences.centerLabel.rawValue, forKey: Self.appearanceDefaultsKey(profile, "centerLabel"))
-        defaults.set(preferences.usageDisplay.rawValue, forKey: Self.appearanceDefaultsKey(profile, "usageDisplay"))
-        defaults.set(preferences.sessionStateIndicator.rawValue, forKey: Self.appearanceDefaultsKey(profile, "stateIndicator"))
-        defaults.set(preferences.sessionGroup.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionGroup"))
-        defaults.set(preferences.sessionSort.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionSort"))
-        defaults.set(preferences.completedStaleThreshold.rawValue, forKey: Self.appearanceDefaultsKey(profile, "completedStaleThreshold"))
+        var snapshot = settingsStore.load()
+        snapshot.selectedProfile = appearanceSettingsProfile
+        switch profile {
+        case .notch:
+            snapshot.notch = preferences
+        case .topBar:
+            snapshot.topBar = preferences
+        }
+        appearanceSettingsSaveState = settingsStore.save(snapshot)
     }
 
     // MARK: - Watch Notification
@@ -507,7 +562,16 @@ final class AppModel {
     private var bridgeReconnectTask: Task<Void, Never>?
 
     @ObservationIgnored
+    private var hermesGatewayTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private let hermesGatewayAdapter: HermesGatewayAdapter
+
+    @ObservationIgnored
     private var hasStarted = false
+
+    @ObservationIgnored
+    private let settingsStore: OrbitSettingsStore
 
     @ObservationIgnored
     private let bridgeServer = BridgeServer()
@@ -586,15 +650,23 @@ final class AppModel {
         },
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { session in
             await ForegroundTerminalSessionProbe().matches(session: session)
-        }
+        },
+        hermesGatewayAdapter: HermesGatewayAdapter? = nil,
+        settingsStore: OrbitSettingsStore? = nil
     ) {
+        self.settingsStore = settingsStore ?? OrbitSettingsStore()
         self.terminalJumpAction = terminalJumpAction
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
+        self.hermesGatewayAdapter = hermesGatewayAdapter ?? HermesGatewayAdapter(
+            bearerToken: ProcessInfo.processInfo.environment["ORBIT_HERMES_GATEWAY_TOKEN"]
+        )
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.orbitStarfieldEnabledDefaultsKey: OrbitSurfaceStyle.defaultStarfieldEnabled,
+            Self.orbitStarDensityDefaultsKey: OrbitStarDensity.balanced.rawValue,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -609,12 +681,15 @@ final class AppModel {
             )
         }
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        orbitStarfieldEnabled = UserDefaults.standard.bool(forKey: Self.orbitStarfieldEnabledDefaultsKey)
+        orbitStarDensity = OrbitStarDensity(
+            rawValue: UserDefaults.standard.string(forKey: Self.orbitStarDensityDefaultsKey) ?? ""
+        ) ?? .balanced
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
-        appearanceSettingsProfile = IslandAppearanceDisplayProfile(
-            rawValue: UserDefaults.standard.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
-        ) ?? .topBar
-        notchAppearancePreferences = Self.loadAppearancePreferences(for: .notch)
-        topBarAppearancePreferences = Self.loadAppearancePreferences(for: .topBar)
+        let appearanceSettingsSnapshot = self.settingsStore.load()
+        appearanceSettingsProfile = appearanceSettingsSnapshot.selectedProfile
+        notchAppearancePreferences = appearanceSettingsSnapshot.notch
+        topBarAppearancePreferences = appearanceSettingsSnapshot.topBar
         watchNotificationEnabled = UserDefaults.standard.bool(forKey: Self.watchNotificationEnabledKey)
         if watchNotificationEnabled {
             startWatchRelay()
@@ -1096,6 +1171,7 @@ final class AppModel {
                 hooks.startCodexUsageMonitoringIfNeeded()
             }
             updateChecker.startIfNeeded()
+            startHermesGatewayMonitoring()
 
         } else {
             isResolvingInitialLiveSessions = false
@@ -1123,6 +1199,25 @@ final class AppModel {
             lastActionMessage = "Failed to start local bridge: \(error.localizedDescription)"
             harnessRuntimeMonitor?.recordMilestone("bridgeStartFailed", message: lastActionMessage)
         }
+    }
+
+    private func startHermesGatewayMonitoring() {
+        hermesGatewayTask?.cancel()
+        hermesGatewayTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                hermesGatewaySnapshot = await hermesGatewayAdapter.fetchSnapshot()
+                do {
+                    try await Task.sleep(for: .seconds(15))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    func refreshHermesGatewaySnapshot() async {
+        hermesGatewaySnapshot = await hermesGatewayAdapter.fetchSnapshot()
     }
 
     // MARK: - Bridge observer connection
@@ -1231,6 +1326,7 @@ final class AppModel {
     private func presentNotificationSurface(_ surface: IslandSurface) { overlay.presentNotificationSurface(surface) }
     private func reconcileIslandSurfaceAfterStateChange() { overlay.reconcileIslandSurfaceAfterStateChange() }
     private func dismissNotificationSurfaceIfPresent(for sessionID: String) { overlay.dismissNotificationSurfaceIfPresent(for: sessionID) }
+    private func holdNotificationSurfaceForReceiptIfPresent(for sessionID: String) { overlay.holdNotificationSurfaceForReceiptIfPresent(for: sessionID) }
     private func dismissOverlayForJump() { overlay.dismissOverlayForJump() }
 
     var shouldAutoCollapseOnMouseLeave: Bool { overlay.shouldAutoCollapseOnMouseLeave }
@@ -1245,6 +1341,17 @@ final class AppModel {
         autoCollapseNotificationCards: Bool = false
     ) {
         state = SessionState(sessions: snapshot.sessions)
+        receiptLedger = OrbitReceiptLedger()
+        for receipt in snapshot.receipts {
+            receiptLedger.append(receipt)
+        }
+        contextEvidenceLedger = OrbitContextEvidenceLedger()
+        for evidence in snapshot.contextEvidence {
+            contextEvidenceLedger.append(evidence)
+        }
+        if let hermesGatewaySnapshot = snapshot.hermesGatewaySnapshot {
+            self.hermesGatewaySnapshot = hermesGatewaySnapshot
+        }
         selectedSessionID = snapshot.selectedSessionID ?? snapshot.sessions.first?.id
         lastActionMessage = "Loaded debug scenario: \(snapshot.title)."
         harnessRuntimeMonitor?.recordMilestone("scenarioLoaded", message: snapshot.title)
@@ -1263,7 +1370,7 @@ final class AppModel {
             // the `CommandGroup(.appSettings)` button that opens the window.
             NSApp.sendAction(NSSelectorFromString("showSettingsWindow:"), to: nil, from: nil)
         }
-        if let window = NSApp.windows.first(where: { $0.title == "Open Island Settings" }) {
+        if let window = NSApp.windows.first(where: { $0.title == "Orbit Settings" }) {
             window.orderFrontRegardless()
             window.makeKey()
         }
@@ -1284,26 +1391,53 @@ final class AppModel {
     }
 
     func approveFocusedPermission(_ approved: Bool) {
-        guard let session = focusedSession else {
+        guard let session = focusedSession,
+              let request = session.permissionRequest else {
             return
         }
 
+        let receiptID = queueReceipt(
+            for: session,
+            action: approved ? .permissionAllowedOnce : .permissionDenied,
+            requestID: request.id,
+            providerCorrelationID: request.toolUseID,
+            scope: receiptScope(for: session, request: request),
+            summary: approved ? "permission decision captured" : "permission denial captured"
+        )
         send(
-            .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
+            .resolvePermissionRequest(
+                sessionID: session.id,
+                requestID: request.id,
+                resolution: permissionResolution(for: approved)
+            ),
             userMessage: approved
                 ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
+                : "Denying permission for \(session.title).",
+            receiptID: receiptID
         )
     }
 
     func answerFocusedQuestion(_ answer: String) {
-        guard let session = focusedSession else {
+        guard let session = focusedSession,
+              let prompt = session.questionPrompt else {
             return
         }
 
+        let receiptID = queueReceipt(
+            for: session,
+            action: .questionAnswered,
+            requestID: prompt.id,
+            scope: "question",
+            summary: "question answer captured"
+        )
         send(
-            .answerQuestion(sessionID: session.id, response: QuestionPromptResponse(answer: answer)),
-            userMessage: "Sending answer \"\(answer)\" for \(session.title)."
+            .answerQuestionRequest(
+                sessionID: session.id,
+                requestID: prompt.id,
+                response: QuestionPromptResponse(answer: answer)
+            ),
+            userMessage: "Sending answer \"\(answer)\" for \(session.title).",
+            receiptID: receiptID
         )
     }
 
@@ -1359,26 +1493,50 @@ final class AppModel {
     }
 
     func approvePermission(for sessionID: String, approved: Bool) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = state.session(id: sessionID),
+              let request = session.permissionRequest else {
             return
         }
 
         let resolution = permissionResolution(for: approved)
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.resolvePermission(sessionID: session.id, resolution: resolution)
+        let receiptID = queueReceipt(
+            for: session,
+            action: approved ? .permissionAllowedOnce : .permissionDenied,
+            requestID: request.id,
+            providerCorrelationID: request.toolUseID,
+            scope: receiptScope(for: session, request: request),
+            summary: approved ? "permission decision captured" : "permission denial captured"
+        )
+        holdNotificationSurfaceForReceiptIfPresent(for: sessionID)
+        state.resolvePermission(sessionID: session.id, requestID: request.id, resolution: resolution)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
         send(
-            .resolvePermission(sessionID: session.id, resolution: resolution),
+            .resolvePermissionRequest(
+                sessionID: session.id,
+                requestID: request.id,
+                resolution: resolution
+            ),
             userMessage: approved
                 ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
+                : "Denying permission for \(session.title).",
+            receiptID: receiptID
         )
     }
 
     func approvePermission(for sessionID: String, action: ApprovalAction) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = state.session(id: sessionID),
+              let request = session.permissionRequest else {
+            return
+        }
+
+        approvePermission(for: sessionID, requestID: request.id, action: action)
+    }
+
+    func approvePermission(for sessionID: String, requestID: UUID, action: ApprovalAction) {
+        guard let session = state.session(id: sessionID),
+              let request = session.permissionRequests.first(where: { $0.id == requestID }) else {
             return
         }
 
@@ -1387,7 +1545,7 @@ final class AppModel {
 
         switch action {
         case .deny:
-            resolution = .deny(message: "Permission denied in Open Island.", interrupt: false)
+            resolution = .deny(message: "Permission denied in Orbit.", interrupt: false)
             message = "Denying permission for \(session.title)."
         case .allowOnce:
             resolution = .allowOnce()
@@ -1397,14 +1555,28 @@ final class AppModel {
             message = "Always allowing for \(session.title)."
         }
 
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.resolvePermission(sessionID: session.id, resolution: resolution)
+        let receiptID = queueReceipt(
+            for: session,
+            action: receiptAction(for: action),
+            requestID: request.id,
+            providerCorrelationID: request.toolUseID,
+            scope: receiptScope(for: session, request: request),
+            summary: "permission decision captured"
+        )
+
+        holdNotificationSurfaceForReceiptIfPresent(for: sessionID)
+        state.resolvePermission(sessionID: session.id, requestID: request.id, resolution: resolution)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
         send(
-            .resolvePermission(sessionID: session.id, resolution: resolution),
-            userMessage: message
+            .resolvePermissionRequest(
+                sessionID: session.id,
+                requestID: request.id,
+                resolution: resolution
+            ),
+            userMessage: message,
+            receiptID: receiptID
         )
     }
 
@@ -1415,18 +1587,41 @@ final class AppModel {
     }
 
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = state.session(id: sessionID),
+              let prompt = session.questionPrompt else {
             return
         }
 
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.answerQuestion(sessionID: session.id, response: answer)
+        answerQuestion(for: sessionID, requestID: prompt.id, answer: answer)
+    }
+
+    func answerQuestion(for sessionID: String, requestID: UUID, answer: QuestionPromptResponse) {
+        guard let session = state.session(id: sessionID),
+              let prompt = session.questionPrompts.first(where: { $0.id == requestID }) else {
+            return
+        }
+
+        let receiptID = queueReceipt(
+            for: session,
+            action: .questionAnswered,
+            requestID: prompt.id,
+            scope: "question",
+            summary: "question answer captured"
+        )
+
+        holdNotificationSurfaceForReceiptIfPresent(for: sessionID)
+        state.answerQuestion(sessionID: session.id, requestID: prompt.id, response: answer)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
         send(
-            .answerQuestion(sessionID: session.id, response: answer),
-            userMessage: "Sending answer for \(session.title)."
+            .answerQuestionRequest(
+                sessionID: session.id,
+                requestID: prompt.id,
+                response: answer
+            ),
+            userMessage: "Sending answer for \(session.title).",
+            receiptID: receiptID
         )
     }
 
@@ -1449,8 +1644,56 @@ final class AppModel {
     }
 
 
-    private func send(_ command: BridgeCommand, userMessage: String) {
+    private func queueReceipt(
+        for session: AgentSession,
+        action: OrbitReceipt.Action,
+        requestID: UUID?,
+        providerCorrelationID: String? = nil,
+        scope: String,
+        summary: String
+    ) -> UUID {
+        let receipt = OrbitReceipt(
+            sessionID: session.id,
+            requestID: requestID,
+            providerCorrelationID: providerCorrelationID,
+            adapter: session.tool.rawValue,
+            action: action,
+            scope: scope,
+            status: .decisionCaptured,
+            summary: summary
+        )
+        receiptLedger.append(receipt)
+        return receipt.id
+    }
+
+    private func receiptScope(for session: AgentSession, request: PermissionRequest? = nil) -> String {
+        if let toolName = (request ?? session.permissionRequest)?.toolName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !toolName.isEmpty {
+            return toolName
+        }
+        return "session"
+    }
+
+    private func updateReceipt(_ receiptID: UUID, status: OrbitReceipt.Status) {
+        _ = receiptLedger.transition(id: receiptID, to: status)
+    }
+
+    private func receiptAction(for action: ApprovalAction) -> OrbitReceipt.Action {
+        switch action {
+        case .deny:
+            .permissionDenied
+        case .allowOnce:
+            .permissionAllowedOnce
+        case .allowWithUpdates:
+            .permissionAllowedWithUpdates
+        }
+    }
+
+    private func send(_ command: BridgeCommand, userMessage: String, receiptID: UUID? = nil) {
         lastActionMessage = userMessage
+        if let receiptID {
+            updateReceipt(receiptID, status: .deliveryPending)
+        }
 
         Task { [weak self] in
             guard let self else {
@@ -1459,7 +1702,13 @@ final class AppModel {
 
             do {
                 try await self.bridgeClient.send(command)
+                if let receiptID {
+                    self.updateReceipt(receiptID, status: .delivered)
+                }
             } catch {
+                if let receiptID {
+                    self.updateReceipt(receiptID, status: .deliveryFailed)
+                }
                 self.lastActionMessage = "Failed to send bridge command: \(error.localizedDescription)"
             }
         }
@@ -1473,11 +1722,37 @@ final class AppModel {
         return .deny(message: "Permission denied in Open Island.", interrupt: false)
     }
 
+    func reloadSessionFilteringRules() {
+        state.replaceRuleStores(
+            silence: .settingsBacked(),
+            admission: .settingsBacked()
+        )
+        reconcileIslandSurfaceAfterStateChange()
+        synchronizeSelection()
+    }
+
+    private func resolvingLauncherBundleIdentifier(in event: AgentEvent) -> AgentEvent {
+        guard case var .sessionStarted(payload) = event,
+              payload.launcherBundleID == nil,
+              let launcherName = payload.jumpTarget?.terminalApp,
+              !launcherName.isEmpty,
+              let application = NSWorkspace.shared.runningApplications.first(where: {
+                  $0.localizedName?.localizedCaseInsensitiveCompare(launcherName) == .orderedSame
+                      || $0.bundleURL?.lastPathComponent.localizedCaseInsensitiveCompare(launcherName) == .orderedSame
+              }),
+              let bundleIdentifier = application.bundleIdentifier else {
+            return event
+        }
+        payload.launcherBundleID = bundleIdentifier
+        return .sessionStarted(payload)
+    }
+
     func applyTrackedEvent(
-        _ event: AgentEvent,
+        _ incomingEvent: AgentEvent,
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        let event = resolvingLauncherBundleIdentifier(in: incomingEvent)
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1531,7 +1806,9 @@ final class AppModel {
                 }
             }()
             let session = eventSessionID.flatMap { state.session(id: $0) }
-            relay.notifyEvent(event, session: session)
+            if session?.notificationsSilenced != true {
+                relay.notifyEvent(event, session: session)
+            }
         }
 
         if updateLastActionMessage {
@@ -1555,7 +1832,8 @@ final class AppModel {
         guard !wasAlreadyCompleted,
               notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress),
               let sessionID = surface.sessionID,
-              let session = state.session(id: sessionID) else {
+              let session = state.session(id: sessionID),
+              !session.notificationsSilenced else {
             return
         }
 
@@ -1673,95 +1951,19 @@ final class AppModel {
     }
 
     private func computeSessionBuckets() -> (primary: [AgentSession], overflow: [AgentSession]) {
-        let now = Date.now
-        let rankedSessions = state.sessions.sorted { lhs, rhs in
-            let lhsScore = displayPriority(for: lhs, now: now)
-            let rhsScore = displayPriority(for: rhs, now: now)
-
-            if lhsScore == rhsScore {
-                if lhs.islandActivityDate == rhs.islandActivityDate {
-                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-                }
-
-                return lhs.islandActivityDate > rhs.islandActivityDate
+        let liveAttachmentKeysBySessionID = [String: String](
+            uniqueKeysWithValues: state.sessions.compactMap { session in
+                guard let key = monitoring.liveAttachmentKey(for: session) else { return nil }
+                return (session.id, key)
             }
+        )
 
-            return lhsScore > rhsScore
-        }
-
-        var primary: [AgentSession] = []
-        var claimedLiveAttachmentKeys: Set<String> = []
-
-        for session in rankedSessions where session.isVisibleInIsland {
-            guard !session.isSubagentSession else { continue }
-
-            if let liveAttachmentKey = monitoring.liveAttachmentKey(for: session) {
-                guard claimedLiveAttachmentKeys.insert(liveAttachmentKey).inserted else {
-                    continue
-                }
-            }
-
-            primary.append(session)
-        }
-
-        let primaryIDs = Set(primary.map(\.id))
-        let overflow = rankedSessions.filter { !primaryIDs.contains($0.id) && !$0.isSubagentSession }
-        return (primary, overflow)
-    }
-
-    private func displayPriority(for session: AgentSession, now: Date) -> Int {
-        var score = 0
-
-        let presence = session.islandPresence(at: now)
-
-        if session.isProcessAlive {
-            score += presence == .inactive ? 3_000 : 12_000
-        } else if session.isDemoSession || session.phase.requiresAttention {
-            score += 6_000
-        }
-
-        if session.phase.requiresAttention {
-            score += 10_000
-        }
-
-        if session.currentToolName?.isEmpty == false {
-            score += 6_000
-        }
-
-        if session.jumpTarget != nil {
-            score += 4_000
-        }
-
-        switch session.phase {
-        case .running:
-            score += 2_000
-        case .waitingForApproval:
-            score += 1_500
-        case .waitingForAnswer:
-            score += 1_200
-        case .completed:
-            score += 600
-        }
-
-        if session.isStaleCompletedForIsland(at: now, threshold: completedStaleThreshold.seconds) {
-            score -= 900
-        }
-
-        let age = now.timeIntervalSince(session.islandActivityDate)
-        switch age {
-        case ..<120:
-            score += 500
-        case ..<900:
-            score += 250
-        case ..<3_600:
-            score += 120
-        case ..<21_600:
-            score += 40
-        default:
-            break
-        }
-
-        return score
+        return ApplicationSessionProjection.buckets(
+            sessions: state.sessions,
+            now: .now,
+            completedStaleThreshold: completedStaleThreshold,
+            liveAttachmentKeysBySessionID: liveAttachmentKeysBySessionID
+        )
     }
 
     private func describe(_ event: AgentEvent) -> String {

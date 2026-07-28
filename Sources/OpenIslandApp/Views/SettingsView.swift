@@ -11,6 +11,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case sound
     case appearance
     case watch
+    case filtering
     case shortcuts
     case lab
     case about
@@ -25,6 +26,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    lang.t("settings.tab.display")
         case .sound:      lang.t("settings.tab.sound")
         case .watch:      "Watch"
+        case .filtering:  "Filtering"
         case .shortcuts:  lang.t("settings.tab.shortcuts")
         case .lab:        lang.t("settings.tab.lab")
         case .about:      lang.t("settings.tab.about")
@@ -39,6 +41,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    "textformat.size"
         case .sound:      "speaker.wave.2.fill"
         case .watch:      "applewatch"
+        case .filtering:  "line.3.horizontal.decrease.circle.fill"
         case .shortcuts:  "keyboard.fill"
         case .lab:        "flask.fill"
         case .about:      "info.circle.fill"
@@ -53,6 +56,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    .blue
         case .sound:      .green
         case .watch:      .cyan
+        case .filtering:  .indigo
         case .shortcuts:  .gray
         case .lab:        .pink
         case .about:      .blue
@@ -62,7 +66,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var section: SettingsSection {
         switch self {
         case .general, .setup, .display, .sound, .appearance, .watch: .system
-        case .shortcuts, .lab:                                        .advanced
+        case .filtering, .shortcuts, .lab:                            .advanced
         case .about:                                                  .app
         }
     }
@@ -77,7 +81,7 @@ enum SettingsSection: String, CaseIterable {
         switch self {
         case .system:   lang.t("settings.section.system")
         case .advanced: lang.t("settings.section.advanced")
-        case .app:      "Open Island"
+        case .app:      "Orbit"
         }
     }
 
@@ -148,6 +152,8 @@ struct SettingsView: View {
                 SoundSettingsPane(model: model)
             case .watch:
                 WatchSettingsPane(model: model)
+            case .filtering:
+                FilteringSettingsPane(model: model)
             case .shortcuts:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
             case .lab:
@@ -361,7 +367,7 @@ struct AboutSettingsPane: View {
                 Section {
                     aboutActionRow(
                         title: lang.t("settings.about.quitApp"),
-                        systemImage: "rectangle.portrait.and.arrow.right",
+                        systemImage: "power",
                         tint: Color(red: 1.0, green: 0.29, blue: 0.29),
                         action: {
                             model.quitApplication()

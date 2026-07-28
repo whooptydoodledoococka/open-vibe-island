@@ -1284,6 +1284,118 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    @MainActor
+    func targetedQueuedActionsResolveOnlyTheSelectedRequestID() {
+        let model = AppModel()
+        var session = listSession(id: "queue", phase: .waitingForApproval, updatedAt: .now)
+        let first = PermissionRequest(title: "First", summary: "First", affectedPath: "/tmp/first")
+        let second = PermissionRequest(
+            title: "Second",
+            summary: "Second",
+            affectedPath: "/tmp/second",
+            toolName: "Bash",
+            toolUseID: "toolu_queue_second"
+        )
+        let question = QuestionPrompt(title: "Choose", options: ["A", "B"])
+        session.permissionRequests = [first, second]
+        session.questionPrompts = [question]
+        model.state = SessionState(sessions: [session])
+
+        model.approvePermission(for: session.id, requestID: second.id, action: .deny)
+
+        let afterPermission = model.state.session(id: session.id)
+        #expect(afterPermission?.permissionRequests.map(\.id) == [first.id])
+        #expect(afterPermission?.questionPrompts.map(\.id) == [question.id])
+        #expect(afterPermission?.phase == .waitingForApproval)
+        let permissionReceipt = model.receipts.first { $0.requestID == second.id }
+        #expect(permissionReceipt?.action == .permissionDenied)
+        #expect(permissionReceipt?.providerCorrelationID == "toolu_queue_second")
+        #expect(permissionReceipt?.scope == "Bash")
+
+        model.answerQuestion(
+            for: session.id,
+            requestID: question.id,
+            answer: QuestionPromptResponse(answer: "A")
+        )
+
+        let afterQuestion = model.state.session(id: session.id)
+        #expect(afterQuestion?.permissionRequests.map(\.id) == [first.id])
+        #expect(afterQuestion?.questionPrompts.isEmpty == true)
+        #expect(afterQuestion?.phase == .waitingForApproval)
+        let questionReceipt = model.receipts.first { $0.requestID == question.id }
+        #expect(questionReceipt?.action == .questionAnswered)
+        #expect(questionReceipt?.scope == "question")
+        #expect(model.approvalInboxProjection.pendingCount == 1)
+        #expect(model.approvalInboxProjection.primary?.requestID == first.id)
+        #expect(model.approvalInboxProjection.latestReceipt?.requestID == question.id)
+    }
+
+    @Test
+    @MainActor
+    func notificationApprovalStaysOpenForTruthfulReceiptStatus() {
+        let model = AppModel()
+        let request = PermissionRequest(
+            title: "Run tests",
+            summary: "swift test",
+            affectedPath: "/tmp/project",
+            toolName: "Bash"
+        )
+        var session = listSession(id: "receipt-status", phase: .waitingForApproval, updatedAt: .now)
+        session.permissionRequests = [request]
+        model.state = SessionState(sessions: [session])
+        model.notchStatus = .opened
+        model.notchOpenReason = .notification
+        model.islandSurface = .sessionList(actionableSessionID: session.id)
+
+        model.approvePermission(for: session.id, requestID: request.id, action: .allowOnce)
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.islandSurface.sessionID == session.id)
+        #expect(model.approvalInboxProjection.latestReceipt?.requestID == request.id)
+        #expect(model.approvalInboxProjection.latestReceipt?.status != .acknowledged)
+        #expect(model.shouldAutoCollapseOnMouseLeave)
+    }
+
+    @Test
+    @MainActor
+    func contextEvidenceNeverBleedsAcrossSelectedSessions() {
+        let model = AppModel()
+        let first = listSession(id: "context-one", phase: .running, updatedAt: .now)
+        let second = listSession(id: "context-two", phase: .running, updatedAt: .now)
+        model.state = SessionState(sessions: [first, second])
+        model.selectedSessionID = first.id
+
+        let report = OrbitContextBudgeter.assess(
+            segments: [OrbitContextSegment(provenanceID: "fixture", kind: .user, estimatedTokens: 10)],
+            policy: OrbitContextBudgetPolicy(targetTokens: 100)
+        )
+        model.recordContextEvidence(OrbitContextEvidence(
+            sessionID: second.id,
+            adapter: "codex",
+            freshness: .fresh,
+            confidence: .estimated,
+            strategy: .none,
+            contextWindowTokens: 100,
+            budget: report
+        ))
+
+        #expect(model.latestContextEvidence == nil)
+
+        model.recordContextEvidence(OrbitContextEvidence(
+            sessionID: first.id,
+            adapter: "codex",
+            freshness: .fresh,
+            confidence: .estimated,
+            strategy: .cachePrefixStabilization,
+            contextWindowTokens: 100,
+            budget: report
+        ))
+
+        #expect(model.latestContextEvidence?.sessionID == first.id)
+    }
+
+    @Test
     func recoveredSessionMatchesLiveGhosttyProcessByCWDWhenMultipleCandidatesExist() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

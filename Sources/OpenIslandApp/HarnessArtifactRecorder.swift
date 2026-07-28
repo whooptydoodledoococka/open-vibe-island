@@ -73,6 +73,8 @@ struct HarnessArtifactReport: Codable {
         let attachmentState: String
         let title: String
         let summary: String
+        let permissionRequestCount: Int
+        let questionPromptCount: Int
     }
 
     let scenario: String?
@@ -173,7 +175,9 @@ enum HarnessArtifactRecorder {
                     phase: $0.phase.rawValue,
                     attachmentState: $0.attachmentState.rawValue,
                     title: $0.title,
-                    summary: $0.summary
+                    summary: $0.summary,
+                    permissionRequestCount: $0.permissionRequests.count,
+                    questionPromptCount: $0.questionPrompts.count
                 )
             }
         )

@@ -15,6 +15,10 @@ public struct SessionStarted: Equatable, Codable, Sendable {
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
     public var isRemote: Bool
+    public var launcherBundleID: String?
+    public var initialPrompt: String?
+    public var canonicalStatus: CanonicalSessionStatus?
+    public var toolVerb: SessionToolVerb?
 
     public init(
         sessionID: String,
@@ -30,7 +34,11 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
         cursorMetadata: CursorSessionMetadata? = nil,
-        isRemote: Bool = false
+        isRemote: Bool = false,
+        launcherBundleID: String? = nil,
+        initialPrompt: String? = nil,
+        canonicalStatus: CanonicalSessionStatus? = nil,
+        toolVerb: SessionToolVerb? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -46,6 +54,10 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
         self.isRemote = isRemote
+        self.launcherBundleID = launcherBundleID
+        self.initialPrompt = initialPrompt
+        self.canonicalStatus = canonicalStatus
+        self.toolVerb = toolVerb
     }
 }
 
@@ -54,17 +66,26 @@ public struct SessionActivityUpdated: Equatable, Codable, Sendable {
     public var summary: String
     public var phase: SessionPhase
     public var timestamp: Date
+    public var canonicalStatus: CanonicalSessionStatus?
+    public var toolVerb: SessionToolVerb?
+    public var silencePromptContext: String?
 
     public init(
         sessionID: String,
         summary: String,
         phase: SessionPhase,
-        timestamp: Date
+        timestamp: Date,
+        canonicalStatus: CanonicalSessionStatus? = nil,
+        toolVerb: SessionToolVerb? = nil,
+        silencePromptContext: String? = nil
     ) {
         self.sessionID = sessionID
         self.summary = summary
         self.phase = phase
         self.timestamp = timestamp
+        self.canonicalStatus = canonicalStatus
+        self.toolVerb = toolVerb
+        self.silencePromptContext = silencePromptContext
     }
 }
 
@@ -224,15 +245,18 @@ public struct CursorSessionMetadataUpdated: Equatable, Codable, Sendable {
 
 public struct ActionableStateResolved: Equatable, Codable, Sendable {
     public var sessionID: String
+    public var requestID: UUID?
     public var summary: String
     public var timestamp: Date
 
     public init(
         sessionID: String,
+        requestID: UUID? = nil,
         summary: String,
         timestamp: Date
     ) {
         self.sessionID = sessionID
+        self.requestID = requestID
         self.summary = summary
         self.timestamp = timestamp
     }

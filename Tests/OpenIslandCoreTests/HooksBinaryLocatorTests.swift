@@ -58,6 +58,25 @@ struct HooksBinaryLocatorTests {
 
         #expect(locatedURL?.path == helperBinaryURL.standardizedFileURL.path)
     }
+
+    @Test
+    func locateFindsCanonicalRemoteHookResource() throws {
+        let rootURL = temporaryRootURL(named: "remote-hook-locator")
+        let executableDirectory = rootURL
+            .appendingPathComponent("Orbit.app/Contents/MacOS", isDirectory: true)
+        let hookURL = rootURL
+            .appendingPathComponent("Orbit.app/Contents/Resources/Hooks", isDirectory: true)
+            .appendingPathComponent(HooksBinaryLocator.currentRemoteHookBinaryName)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        try makeExecutable(at: hookURL, contents: "remote-hook")
+
+        let locatedURL = HooksBinaryLocator.locate(
+            currentDirectory: rootURL,
+            executableDirectory: executableDirectory,
+            environment: [:]
+        )
+        #expect(locatedURL?.path == hookURL.standardizedFileURL.path)
+    }
 }
 
 private func temporaryRootURL(named name: String) -> URL {

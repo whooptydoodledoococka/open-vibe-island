@@ -8,6 +8,7 @@ import OpenIslandCore
 final class OverlayUICoordinator {
 
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
+    private static let receiptConfirmationAutoCollapseDelay: TimeInterval = 3
 
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?
@@ -52,7 +53,7 @@ final class OverlayUICoordinator {
     private var screenParametersObserver: NSObjectProtocol?
 
     @ObservationIgnored
-    private var overlayTransitionGeneration: UInt64 = 0
+    private var transitionPolicy = OverlayTransitionPolicy()
 
     @ObservationIgnored
     private var notificationAutoCollapseTask: Task<Void, Never>?
@@ -66,6 +67,9 @@ final class OverlayUICoordinator {
 
     @ObservationIgnored
     private var isPointerInsideIslandSurface = false
+
+    @ObservationIgnored
+    private var receiptConfirmationSessionID: String?
 
     /// Kept for API compatibility; always false now that the window never
     /// resizes and close transitions are pure SwiftUI.
@@ -132,8 +136,9 @@ final class OverlayUICoordinator {
         }
     }
 
-    func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) {
-        transitionOverlay(
+    @discardableResult
+    func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) -> OverlayTransitionPolicy.Token {
+        return transitionOverlay(
             to: .opened,
             reason: reason,
             surface: surface,
@@ -161,6 +166,7 @@ final class OverlayUICoordinator {
             beforeTransition: { [weak self] in
                 self?.notificationAutoCollapseTask?.cancel()
                 self?.notificationAutoCollapseTask = nil
+                self?.receiptConfirmationSessionID = nil
             },
             afterStateChange: { [weak self] in
                 self?.autoCollapseSurfaceHasBeenEntered = false
@@ -176,6 +182,7 @@ final class OverlayUICoordinator {
     /// transitions — shape morphing, content fade, corner radius — are
     /// driven purely by SwiftUI `.animation()` modifiers reacting to
     /// `notchStatus` changes.  No AppKit animation, no window resize.
+    @discardableResult
     private func transitionOverlay(
         to status: NotchStatus,
         reason: NotchOpenReason?,
@@ -184,10 +191,10 @@ final class OverlayUICoordinator {
         beforeTransition: (() -> Void)?,
         afterStateChange: (() -> Void)? = nil,
         onPlacementResolved: (() -> Void)? = nil
-    ) {
+    ) -> OverlayTransitionPolicy.Token {
         beforeTransition?()
 
-        overlayTransitionGeneration &+= 1
+        let token = transitionPolicy.beginTransition()
 
         // Reset measured notification height when the surface changes so stale
         // measurements from a previous notification don't mis-size the new one.
@@ -209,25 +216,27 @@ final class OverlayUICoordinator {
 
         afterStateChange?()
         onPlacementResolved?()
+        return token
     }
 
     func notchPop() {
         guard notchStatus == .closed else { return }
+        let token = transitionPolicy.beginTransition()
         islandSurface = .sessionList()
         notchStatus = .popping
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard self?.notchStatus == .popping else { return }
-            self?.notchStatus = .closed
+        DispatchQueue.main.asyncAfter(deadline: .now() + OverlayTransitionPolicy.popDelay) { [weak self] in
+            guard let self, self.transitionPolicy.accepts(token), self.notchStatus == .popping else { return }
+            self.notchStatus = .closed
         }
     }
 
     func performBootAnimation() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + OverlayTransitionPolicy.bootOpenDelay) { [weak self] in
             guard let self else { return }
-            self.notchOpen(reason: .boot, surface: .sessionList())
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                guard self?.notchOpenReason == .boot else { return }
-                self?.notchClose()
+            let bootOpenToken = self.notchOpen(reason: .boot, surface: .sessionList())
+            DispatchQueue.main.asyncAfter(deadline: .now() + OverlayTransitionPolicy.bootCloseDelay) { [weak self] in
+                guard let self, self.transitionPolicy.accepts(bootOpenToken), self.notchOpenReason == .boot else { return }
+                self.notchClose()
             }
         }
     }
@@ -263,7 +272,6 @@ final class OverlayUICoordinator {
         let validSelectionIDs = Set(overlayDisplayOptions.map(\.id))
         if !validSelectionIDs.contains(overlayDisplaySelectionID) {
             overlayDisplaySelectionID = OverlayDisplayOption.automaticID
-            return
         }
 
         refreshOverlayPlacement()
@@ -294,12 +302,20 @@ final class OverlayUICoordinator {
             return true
         }
 
+        if notchOpenReason == .notification,
+           receiptConfirmationSessionID == islandSurface.sessionID {
+            return true
+        }
+
         return notchOpenReason == .notification
             && islandSurface.autoDismissesWhenPresentedAsNotification(session: activeIslandCardSession)
     }
 
     var autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry: Bool {
         guard notchOpenReason == .notification else { return false }
+        if receiptConfirmationSessionID == islandSurface.sessionID {
+            return true
+        }
         // If the session was removed from state (e.g. by process monitoring),
         // default to requiring prior surface entry — prevents the notification
         // from closing immediately on pointer exit before the user sees it.
@@ -399,6 +415,36 @@ final class OverlayUICoordinator {
         notchClose()
     }
 
+    /// Keeps a resolved actionable notification visible just long enough to
+    /// show its truthful adapter receipt. Delivery and source acknowledgement
+    /// remain separate states; pointer entry defers collapse until exit.
+    func holdNotificationSurfaceForReceiptIfPresent(for sessionID: String) {
+        guard islandSurface.sessionID == sessionID,
+              notchOpenReason == .notification else {
+            return
+        }
+
+        receiptConfirmationSessionID = sessionID
+        notificationAutoCollapseTask?.cancel()
+        notificationAutoCollapseTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(Self.receiptConfirmationAutoCollapseDelay))
+            } catch {
+                return
+            }
+
+            guard let self,
+                  self.receiptConfirmationSessionID == sessionID,
+                  self.notchOpenReason == .notification,
+                  self.islandSurface.sessionID == sessionID,
+                  !self.shouldDeferTimedNotificationAutoCollapse else {
+                return
+            }
+
+            self.notchClose()
+        }
+    }
+
     func dismissOverlayForJump() {
         guard isOverlayVisible else {
             return
@@ -486,10 +532,9 @@ final class OverlayUICoordinator {
         overlayPanelController.setInteractive(interactive)
 
         // Defer AppKit panel animation to the next run-loop iteration.
-        overlayTransitionGeneration &+= 1
-        let capturedGeneration = overlayTransitionGeneration
+        let capturedToken = transitionPolicy.beginTransition()
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.overlayTransitionGeneration == capturedGeneration else { return }
+            guard let self, self.transitionPolicy.accepts(capturedToken) else { return }
             switch snapshot.notchStatus {
             case .opened:
                 self.overlayPlacementDiagnostics = self.overlayPanelController.show(

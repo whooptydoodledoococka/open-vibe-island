@@ -11,6 +11,9 @@ struct IslandDebugSnapshot {
     let islandSurface: IslandSurface
     let sessions: [AgentSession]
     let selectedSessionID: String?
+    var hermesGatewaySnapshot: HermesGatewaySnapshot? = nil
+    var receipts: [OrbitReceipt] = []
+    var contextEvidence: [OrbitContextEvidence] = []
 }
 
 enum IslandDebugScenario: String, CaseIterable, Identifiable {
@@ -20,6 +23,11 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case questionCard
     case completionCard
     case longCompletionCard
+    case staleHermes
+    case unavailableHermes
+    case multipleRequests
+    case receiptDelivered
+    case contextPressure
 
     var id: String { rawValue }
 
@@ -37,6 +45,16 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Completion Card"
         case .longCompletionCard:
             "Long Completion Card"
+        case .staleHermes:
+            "Stale Hermes Evidence"
+        case .unavailableHermes:
+            "Unavailable Hermes Evidence"
+        case .multipleRequests:
+            "Multiple Requests"
+        case .receiptDelivered:
+            "Delivered Receipt"
+        case .contextPressure:
+            "Context Pressure"
         }
     }
 
@@ -54,6 +72,16 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Auto-expanded finished-task reminder surface after a turn completes."
         case .longCompletionCard:
             "Long finished-task reply stays inside the card and scrolls internally."
+        case .staleHermes:
+            "Hermes gateway and session metadata are visibly labeled stale."
+        case .unavailableHermes:
+            "Hermes gateway and session metadata are visibly labeled unavailable."
+        case .multipleRequests:
+            "One session retains multiple permissions and questions without overwrite."
+        case .receiptDelivered:
+            "Adapter delivery remains visibly distinct from source acknowledgement."
+        case .contextPressure:
+            "Metadata-only context headroom, savings, cache, freshness, and confidence."
         }
     }
 
@@ -136,11 +164,138 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
                 selectedSessionID: session.id
             )
+
+        case .staleHermes:
+            let sessions = DebugSessionFactory.listSessions(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 430,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions.first?.id,
+                hermesGatewaySnapshot: HermesGatewaySnapshot(
+                    gateway: .stale,
+                    sessions: .stale,
+                    detail: "Last successful local metadata refresh was 90 seconds ago."
+                )
+            )
+
+        case .unavailableHermes:
+            let sessions = DebugSessionFactory.listSessions(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 430,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions.first?.id,
+                hermesGatewaySnapshot: HermesGatewaySnapshot(
+                    gateway: .unavailable,
+                    sessions: .unavailable,
+                    detail: "Local Hermes metadata is unavailable."
+                )
+            )
+
+        case .multipleRequests:
+            let session = DebugSessionFactory.multipleRequestSession(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 360,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .receiptDelivered:
+            let session = DebugSessionFactory.receiptSession(now: now)
+            let receipt = OrbitReceipt(
+                id: UUID(uuidString: "50000000-0000-0000-0000-000000000001")!,
+                createdAt: now,
+                sessionID: session.id,
+                requestID: UUID(uuidString: "50000000-0000-0000-0000-000000000002"),
+                providerCorrelationID: "demo-correlation",
+                adapter: AgentTool.codex.rawValue,
+                action: .permissionAllowedOnce,
+                scope: "Bash",
+                status: .delivered,
+                summary: "permission decision captured"
+            )
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 260,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id,
+                receipts: [receipt]
+            )
+
+        case .contextPressure:
+            let sessions = DebugSessionFactory.listSessions(now: now)
+            let report = OrbitContextBudgeter.assess(
+                segments: [
+                    OrbitContextSegment(provenanceID: "system", kind: .system, estimatedTokens: 18_000, priority: 10),
+                    OrbitContextSegment(provenanceID: "tools", kind: .tool, estimatedTokens: 42_000, priority: 1),
+                ],
+                policy: OrbitContextBudgetPolicy(targetTokens: 36_000, reservedTokens: 4_000)
+            )
+            let evidence = OrbitContextEvidence(
+                id: UUID(uuidString: "70000000-0000-0000-0000-000000000001")!,
+                sessionID: sessions[0].id,
+                taskID: "task_demo_context",
+                adapter: AgentTool.codex.rawValue,
+                model: "demo-model",
+                observedAt: now,
+                freshness: .fresh,
+                confidence: .estimated,
+                strategy: .losslessCompaction,
+                contextWindowTokens: 72_000,
+                cachedContextTokens: 21_000,
+                cacheWriteTokens: 2_000,
+                budget: report,
+                reversibleReferenceID: "blob_demo_context"
+            )
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 480,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions[0].id,
+                contextEvidence: [evidence]
+            )
         }
     }
 }
 
 private enum DebugSessionFactory {
+    static func receiptSession(now: Date) -> AgentSession {
+        var session = AgentSession(
+            id: "session-receipt-delivered",
+            title: "orbit · approval delivery",
+            tool: .codex,
+            origin: .demo,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Waiting for source acknowledgement",
+            updatedAt: now
+        )
+        session.isProcessAlive = true
+        return session
+    }
+
     static func listSessions(now: Date) -> [AgentSession] {
         [
             runningSession(now: now),
@@ -148,63 +303,63 @@ private enum DebugSessionFactory {
             inactiveSession(
                 id: "session-claude-research",
                 workspace: "claude-research",
-                initialPrompt: "我更关注获取的部分 我想在其他 app 里实时展示我的 usage。",
-                latestPrompt: "为什么要查 Cursor 官方呢？这个事跟 Cursor 有什么关系？",
-                assistant: "不建议按“最古老”来选。最古老不等于最轻量且最适合这个任务。",
+                initialPrompt: "I care more about acquisition. I want to show my usage in another app in real time.",
+                latestPrompt: "Why check Cursor's official docs? What does this have to do with Cursor?",
+                assistant: "I would not choose by age. The oldest option is not automatically the lightest or best fit.",
                 age: 27 * 60,
                 now: now
             ),
             inactiveSession(
                 id: "session-personal",
                 workspace: "Personal",
-                initialPrompt: "[Image #1]我给你截了 3 张图，这个是我现在 Cursor 里面可用的模型。",
-                latestPrompt: "[Image #1]我给你截了 3 张图，这个是我现在 Cursor 里面可用的模型。",
-                assistant: "这张图里的模型，严格说不是这个 `voice-input` App 应该选的模…",
+                initialPrompt: "[Image #1] I captured three screenshots of the models currently available in Cursor.",
+                latestPrompt: "[Image #1] I captured three screenshots of the models currently available in Cursor.",
+                assistant: "Strictly speaking, the model in this image is not the one this `voice-input` app should choose.",
                 age: 32 * 60,
                 now: now
             ),
             inactiveSession(
                 id: "session-open-agent-sdk",
                 workspace: "open-agent-sdk",
-                initialPrompt: "OK，那现在你是不是需要提一个 PR？",
-                latestPrompt: "那你直接提个 PR 吧",
-                assistant: "PR 已经提好了：",
+                initialPrompt: "Okay, do you need to open a PR now?",
+                latestPrompt: "Then just open a PR.",
+                assistant: "The PR is ready:",
                 age: 60 * 60,
                 now: now
             ),
             inactiveSession(
                 id: "session-voice-input",
                 workspace: "voice-input",
-                initialPrompt: "看看 voice-input 这个仓库，重点关注模型选型。",
-                latestPrompt: "严格来说它应该选哪个模型？",
-                assistant: "如果目标是轻量实时，不建议直接按 Cursor 现成套餐来映射。",
+                initialPrompt: "Look at the voice-input repository, focusing on model selection.",
+                latestPrompt: "Which model should it use, strictly speaking?",
+                assistant: "For lightweight real-time use, do not map directly from Cursor's existing plans.",
                 age: 78 * 60,
                 now: now
             ),
             inactiveSession(
                 id: "session-agents",
                 workspace: "agents",
-                initialPrompt: "把你的分支和 worktree 都给我。",
-                latestPrompt: "所以你是要先重启吗？",
-                assistant: "已经重启了。现在跑的是新的 dev 进程。",
+                initialPrompt: "Give me your branch and worktree.",
+                latestPrompt: "So do you need to restart first?",
+                assistant: "Restarted. The new dev process is running.",
                 age: 92 * 60,
                 now: now
             ),
             inactiveSession(
                 id: "session-claude",
                 workspace: "claude-code",
-                initialPrompt: "我们先把整个 notch 的背景换成纯黑。",
-                latestPrompt: "下面那块空白要去掉。",
-                assistant: "展开态高度已经改成按内容自适应。",
+                initialPrompt: "Let's change the entire notch background to pure black first.",
+                latestPrompt: "Remove the empty area below it.",
+                assistant: "The expanded height now adapts to the content.",
                 age: 118 * 60,
                 now: now
             ),
             inactiveSession(
                 id: "session-hooks",
                 workspace: "hooks",
-                initialPrompt: "假如我想实时监控 Claude Code 的 usage 应该怎么做？",
-                latestPrompt: "如果是在别的 app 里展示呢？",
-                assistant: "代码里已经有几条更直接的路可以走。",
+                initialPrompt: "How should I monitor Claude Code usage in real time?",
+                latestPrompt: "What if it is displayed in another app?",
+                assistant: "There are several more direct paths already available in the code.",
                 age: 130 * 60,
                 now: now
             ),
@@ -223,7 +378,7 @@ private enum DebugSessionFactory {
     static func runningSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-running",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
@@ -232,15 +387,15 @@ private enum DebugSessionFactory {
             updatedAt: now.addingTimeInterval(-45),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-running"
             ),
             codexMetadata: CodexSessionMetadata(
-                initialUserPrompt: "把 DEV 完全重构成一个 debug 页面，我需要稳定验收这些 card 的 UI。",
-                lastUserPrompt: "之前也有错误的改动吧 你应该重新改",
-                lastAssistantMessage: "读取现有 notch 状态与事件路由，准备把提醒态从 session list 里拆出来。",
+                initialUserPrompt: "Refactor DEV completely into a debug page. I need stable UI acceptance for these cards.",
+                lastUserPrompt: "There were incorrect changes before too. You should redo them.",
+                lastAssistantMessage: "Reading the current notch state and event routing, then splitting alert state out of the session list.",
                 currentTool: "exec_command",
                 currentCommandPreview: "sed -n '1,260p' Sources/OpenIslandApp/Views/SettingsView.swift"
             )
@@ -261,13 +416,13 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-agent-sdk",
                 paneTitle: "codex ~/Personal/open-agent-sdk",
-                workingDirectory: "/Users/wangruobing/Personal/open-agent-sdk",
+                workingDirectory: "/Users/example/Personal/open-agent-sdk",
                 terminalSessionID: "ghostty-recent"
             ),
             codexMetadata: CodexSessionMetadata(
-                initialUserPrompt: "读一下这篇论文 https://arxiv.org/html/2603.28052",
-                lastUserPrompt: "读一下这篇论文 https://arxiv.org/html/2603.28052v1 感觉和我们在做的 agent 很像。",
-                lastAssistantMessage: "整理完了，已经提炼出和 autoreserach 相关的几段关键差异。"
+                initialUserPrompt: "Read this paper: https://arxiv.org/html/2603.28052",
+                lastUserPrompt: "Read this paper: https://arxiv.org/html/2603.28052v1. It feels similar to the agent we are building.",
+                lastAssistantMessage: "Finished. I extracted the key differences related to autoresearch."
             )
         )
     }
@@ -294,7 +449,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: workspace,
                 paneTitle: "codex ~/Personal/\(workspace)",
-                workingDirectory: "/Users/wangruobing/Personal/\(workspace)",
+                workingDirectory: "/Users/example/Personal/\(workspace)",
                 terminalSessionID: "ghostty-\(id)"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -308,7 +463,7 @@ private enum DebugSessionFactory {
     static func approvalSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-approval",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
@@ -324,17 +479,17 @@ private enum DebugSessionFactory {
             ),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-approval"
             ),
             codexMetadata: CodexSessionMetadata(
-                initialUserPrompt: "接下来我打算继续补齐一些能力。",
-                lastUserPrompt: "askUserquestion 和权限审批，我想把他们也做到我们的 island 里。",
-                lastAssistantMessage: "已经准备好重写 DEV 页面，需要批准文件改动。",
+                initialUserPrompt: "I plan to keep filling in more capabilities.",
+                lastUserPrompt: "I want to bring askUserQuestion and permission approval into our island too.",
+                lastAssistantMessage: "The DEV page is ready to rewrite. File changes need approval.",
                 currentTool: "exec_command",
-                currentCommandPreview: "head -5000 /Users/wangruobing/Personal/claude-research/extracts/claude-bun-2.1.81-v3/islands/000_cli.js.txt"
+                currentCommandPreview: "head -5000 /Users/example/Personal/claude-research/extracts/claude-bun-2.1.81-v3/islands/000_cli.js.txt"
             )
         )
     }
@@ -342,12 +497,12 @@ private enum DebugSessionFactory {
     static func questionSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-question",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
             phase: .waitingForAnswer,
-            summary: "这个提醒态需要自动收起吗？",
+            summary: "Should this alert state collapse automatically?",
             updatedAt: now.addingTimeInterval(-18),
             questionPrompt: QuestionPrompt(
                 title: "Which authentication method should we use?",
@@ -366,40 +521,56 @@ private enum DebugSessionFactory {
             ),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-question"
             ),
             codexMetadata: CodexSessionMetadata(
-                initialUserPrompt: "原产品看起来像是单 notch surface + 多 content surface。",
-                lastUserPrompt: "我们应该怎么做？",
-                lastAssistantMessage: "建议先把 approvalCard、questionCard、completionCard 拆成独立 surface。"
+                initialUserPrompt: "The original product looks like one notch surface plus multiple content surfaces.",
+                lastUserPrompt: "How should we approach this?",
+                lastAssistantMessage: "I suggest splitting approvalCard, questionCard, and completionCard into independent surfaces."
             )
         )
+    }
+
+    static func multipleRequestSession(now: Date) -> AgentSession {
+        var session = approvalSession(now: now)
+        session.permissionRequests.append(
+            PermissionRequest(
+                title: "Approve package refresh",
+                summary: "Allow Orbit to replace the local development bundle?",
+                affectedPath: "~/Applications/Orbit Dev.app",
+                primaryActionTitle: "Allow",
+                secondaryActionTitle: "Deny"
+            )
+        )
+        session.questionPrompts = [questionSession(now: now).questionPrompt].compactMap { $0 }
+        session.summary = "Three requests are waiting for review."
+        return session
     }
 
     static func completionSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-completion",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
             phase: .completed,
-            summary: "DEV 页面已经切到 mock-driven card 调试模式。",
+            summary: "The DEV page now uses mock-driven card debug mode.",
             updatedAt: now.addingTimeInterval(-15),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-completion"
             ),
             codexMetadata: CodexSessionMetadata(
-                initialUserPrompt: "这次我可能确实需要一些 mock 手段，让我能验收这些 Card 的 UI。",
-                lastUserPrompt: "可以把 DEV 完全重构成一个 debug 页面。",
-                lastAssistantMessage: "Plan 文件已写好。你的 hooks 触发情况如何？"
+                initialUserPrompt: "This time I may actually need mocks so I can accept these cards' UI.",
+                lastUserPrompt: "Can you refactor DEV completely into a debug page?",
+                lastAssistantMessage: "The plan is written. How are your hooks firing?"
             )
         )
     }
@@ -407,31 +578,31 @@ private enum DebugSessionFactory {
     static func longCompletionSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-completion-long",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
             phase: .completed,
-            summary: "README 提交已经完成，长回复现在应该在卡片内部滚动。",
+            summary: "The README commit is complete. Long replies should now scroll inside the card.",
             updatedAt: now.addingTimeInterval(-45),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-completion-long"
             ),
             codexMetadata: CodexSessionMetadata(
-                initialUserPrompt: "帮我把这个 README 也提交了，然后把结果贴给我。",
-                lastUserPrompt: "顺便确认一下当前工作树和验证情况。",
+                initialUserPrompt: "Commit this README too, then paste the result here.",
+                lastUserPrompt: "Also confirm the current worktree and verification status.",
                 lastAssistantMessage: """
-[README.md](/Users/wangruobing/Personal/open-island/README.md) 的现有改动已经单独提交了，commit 是 `f196316`，message 是 `docs: update readme tagline`。
+[README.md](/Users/example/Personal/orbit/README.md) changes were committed separately as `f196316`, with message `docs: update readme tagline`.
 
-这轮没有跑测试，因为只是文案改动。当前工作树是干净的，`main` 相对 `origin/main` 现在是 `ahead 6`。
+This pass did not run tests because it only changed copy. The worktree is clean, and `main` is currently `ahead 6` of `origin/main`.
 
-如果你要我继续做下一轮，我建议把工作切到独立 worktree 里，这样不会和共享 `main` 上的并行改动互相打架。
+If you want another pass, I recommend moving the work to an independent worktree so it does not conflict with parallel changes on shared `main`.
 
-下一步我会先检查当前仓库状态，然后从 `origin/main` 新建一个 worktree 和分支，在新工作区里继续处理这个样式问题并做完验证。
+Next I will check the repository state, create a worktree and branch from `origin/main`, then continue the style work there and finish verification.
 """
             )
         )

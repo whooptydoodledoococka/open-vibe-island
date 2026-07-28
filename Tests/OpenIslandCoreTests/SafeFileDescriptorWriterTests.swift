@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import OpenIslandCore
 
+@Suite(.serialized)
 struct SafeFileDescriptorWriterTests {
     @Test
     func writesToAvailablePipe() throws {

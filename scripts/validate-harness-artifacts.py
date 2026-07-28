@@ -295,6 +295,67 @@ def main() -> None:
         if selected_session(report).get("id") != "session-completion-long":
             assert_contains_any(text_values, ["README.md", "worktree"], "longCompletionCard text values")
 
+    elif scenario in {"staleHermes", "unavailableHermes"}:
+        if notch_status != "opened" or island_surface != "sessionList":
+            fail(f"expected opened sessionList for {scenario}, got {notch_status!r} / {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(360, 500),
+            context=f"{scenario} overlay frame",
+        )
+        expected_truth = "stale" if scenario == "staleHermes" else "unavailable"
+        evidence = {value.lower() for value in labels | text_values}
+        if not any(expected_truth in value and "hermes" in value for value in evidence):
+            fail(f"{scenario} is missing accessible Hermes {expected_truth} evidence")
+
+    elif scenario == "multipleRequests":
+        if notch_status != "opened" or not is_actionable_session_surface(island_surface):
+            fail(f"expected opened actionable surface for multipleRequests, got {notch_status!r} / {island_surface!r}")
+        session = selected_session(report)
+        if session.get("permissionRequestCount") != 2 or session.get("questionPromptCount") != 1:
+            fail(f"multipleRequests did not retain 2 permissions and 1 question: {session!r}")
+        if selected_session_phase(report) != "waitingForApproval":
+            fail("multipleRequests did not preserve approval-first attention priority")
+
+    elif scenario == "receiptDelivered":
+        if notch_status != "opened" or not is_actionable_session_surface(island_surface):
+            fail(f"expected opened receipt surface, got {notch_status!r} / {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(180, 360),
+            context="receiptDelivered overlay frame",
+        )
+        assert_contains_any(text_values, ["Allowed once · delivered"], "receiptDelivered text values")
+        assert_contains_any(
+            text_values,
+            ["Source acknowledgement is still pending"],
+            "receiptDelivered acknowledgement evidence",
+        )
+        if any("acknowledged" in value.lower() and "pending" not in value.lower() for value in text_values):
+            fail("receiptDelivered falsely claims source acknowledgement")
+
+    elif scenario == "contextPressure":
+        if notch_status != "opened" or island_surface != "sessionList":
+            fail(f"expected opened sessionList for contextPressure, got {notch_status!r} / {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(360, 560),
+            context="contextPressure overlay frame",
+        )
+        context_evidence = labels | text_values
+        assert_contains_any(context_evidence, ["Context filling"], "contextPressure status")
+        assert_contains_any(context_evidence, ["lossless compaction"], "contextPressure strategy")
+        assert_contains_any(context_evidence, ["estimated"], "contextPressure confidence")
+        context_status_values = {
+            value for value in context_evidence
+            if "context" in value.lower() or "compaction" in value.lower()
+        }
+        if any("$" in value for value in context_status_values):
+            fail("contextPressure contains an unsupported dollar claim")
+
     else:
         fail(f"unsupported scenario {scenario!r}")
 

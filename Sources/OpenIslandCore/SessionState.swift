@@ -1,10 +1,57 @@
 import Foundation
 
+public enum CanonicalSessionStatus: String, Codable, CaseIterable, Sendable {
+    case thinking
+    case runningTool
+    case waitingApproval
+    case question
+    case working
+    case processing
+    case ended
+    case unknown
+    case compacting
+}
+
+public enum SessionToolVerb: String, Codable, CaseIterable, Sendable {
+    case reading
+    case searching
+    case editing
+    case writing
+    case running
+    case building
+    case testing
+    case debugging
+    case planning
+    case reviewing
+    case fetching
+    case waiting
+    case compacting
+}
+
+public extension SessionPhase {
+    var canonicalStatus: CanonicalSessionStatus {
+        switch self {
+        case .running: .working
+        case .waitingForApproval: .waitingApproval
+        case .waitingForAnswer: .question
+        case .completed: .ended
+        }
+    }
+}
+
 public struct SessionState: Equatable, Sendable {
     public private(set) var sessionsByID: [String: AgentSession]
+    public private(set) var silenceRuleStore: SilenceRuleStore
+    public private(set) var admissionRuleStore: AdmissionRuleStore
 
-    public init(sessions: [AgentSession] = []) {
+    public init(
+        sessions: [AgentSession] = [],
+        silenceRuleStore: SilenceRuleStore = .settingsBacked(),
+        admissionRuleStore: AdmissionRuleStore = .settingsBacked()
+    ) {
         self.sessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        self.silenceRuleStore = silenceRuleStore
+        self.admissionRuleStore = admissionRuleStore
     }
 
     public var sessions: [AgentSession] {
@@ -56,7 +103,15 @@ public struct SessionState: Equatable, Sendable {
     public mutating func apply(_ event: AgentEvent) {
         switch event {
         case let .sessionStarted(payload):
+            guard admissionRuleStore.admits(launcherBundleID: payload.launcherBundleID) else {
+                sessionsByID.removeValue(forKey: payload.sessionID)
+                return
+            }
             let preservedFirstSeenAt = sessionsByID[payload.sessionID]?.firstSeenAt
+            let notificationsSilenced = silenceRuleStore.shouldSilence(
+                cwd: payload.jumpTarget?.workingDirectory,
+                prompt: payload.initialPrompt ?? payload.summary
+            )
             var session = AgentSession(
                 id: payload.sessionID,
                 title: payload.title,
@@ -72,7 +127,12 @@ public struct SessionState: Equatable, Sendable {
                 claudeMetadata: payload.claudeMetadata?.isEmpty == true ? nil : payload.claudeMetadata,
                 geminiMetadata: payload.geminiMetadata?.isEmpty == true ? nil : payload.geminiMetadata,
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
-                cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata
+                cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata,
+                canonicalStatus: payload.canonicalStatus,
+                toolVerb: payload.toolVerb,
+                launcherBundleID: payload.launcherBundleID,
+                notificationsSilenced: notificationsSilenced,
+                silencePromptContext: payload.initialPrompt ?? payload.summary
             )
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
@@ -92,23 +152,32 @@ public struct SessionState: Equatable, Sendable {
 
             let keepsPendingApproval = payload.phase == .running
                 && session.phase == .waitingForApproval
-                && session.permissionRequest != nil
+                && !session.permissionRequests.isEmpty
             let keepsPendingQuestion = payload.phase == .running
                 && session.phase == .waitingForAnswer
-                && session.questionPrompt != nil
+                && !session.questionPrompts.isEmpty
             let preservesActionableState = keepsPendingApproval || keepsPendingQuestion
 
             if !preservesActionableState {
                 session.phase = payload.phase
+                session.canonicalStatus = payload.canonicalStatus ?? payload.phase.canonicalStatus
+                session.toolVerb = payload.toolVerb
                 session.summary = payload.summary
                 if payload.phase != .waitingForApproval {
-                    session.permissionRequest = nil
+                    session.permissionRequests.removeAll()
                 }
                 if payload.phase != .waitingForAnswer {
-                    session.questionPrompt = nil
+                    session.questionPrompts.removeAll()
                 }
             }
 
+            if let silencePromptContext = payload.silencePromptContext {
+                session.silencePromptContext = silencePromptContext
+                session.notificationsSilenced = silenceRuleStore.shouldSilence(
+                    cwd: session.jumpTarget?.workingDirectory,
+                    prompt: silencePromptContext
+                )
+            }
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -117,10 +186,12 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
+            if !session.permissionRequests.contains(where: { $0.id == payload.request.id }) {
+                session.permissionRequests.append(payload.request)
+            }
             session.phase = .waitingForApproval
-            session.summary = payload.request.summary
-            session.permissionRequest = payload.request
-            session.questionPrompt = nil
+            session.canonicalStatus = .waitingApproval
+            session.summary = session.permissionRequests.first?.summary ?? payload.request.summary
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -129,10 +200,14 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
-            session.phase = .waitingForAnswer
-            session.summary = payload.prompt.title
-            session.questionPrompt = payload.prompt
-            session.permissionRequest = nil
+            if !session.questionPrompts.contains(where: { $0.id == payload.prompt.id }) {
+                session.questionPrompts.append(payload.prompt)
+            }
+            if session.permissionRequests.isEmpty {
+                session.phase = .waitingForAnswer
+                session.canonicalStatus = .question
+                session.summary = session.questionPrompts.first?.title ?? payload.prompt.title
+            }
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -142,9 +217,10 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.phase = .completed
+            session.canonicalStatus = .ended
             session.summary = payload.summary
-            session.permissionRequest = nil
-            session.questionPrompt = nil
+            session.permissionRequests.removeAll()
+            session.questionPrompts.removeAll()
             session.updatedAt = payload.timestamp
             if payload.isSessionEnd == true {
                 session.isSessionEnded = true
@@ -211,14 +287,34 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
-            guard session.phase == .waitingForApproval || session.phase == .waitingForAnswer else {
-                return
+            if let requestID = payload.requestID {
+                let previousCount = session.permissionRequests.count + session.questionPrompts.count
+                session.permissionRequests.removeAll { $0.id == requestID }
+                session.questionPrompts.removeAll { $0.id == requestID }
+                guard session.permissionRequests.count + session.questionPrompts.count < previousCount else {
+                    return
+                }
+            } else {
+                guard session.permissionRequests.count + session.questionPrompts.count == 1 else {
+                    return
+                }
+                session.permissionRequests.removeAll()
+                session.questionPrompts.removeAll()
             }
 
-            session.phase = .running
-            session.summary = payload.summary
-            session.permissionRequest = nil
-            session.questionPrompt = nil
+            if let request = session.permissionRequests.first {
+                session.phase = .waitingForApproval
+                session.canonicalStatus = .waitingApproval
+                session.summary = request.summary
+            } else if let prompt = session.questionPrompts.first {
+                session.phase = .waitingForAnswer
+                session.canonicalStatus = .question
+                session.summary = prompt.title
+            } else {
+                session.phase = .running
+                session.canonicalStatus = .working
+                session.summary = payload.summary
+            }
             session.updatedAt = payload.timestamp
             upsert(session)
         }
@@ -229,15 +325,48 @@ public struct SessionState: Equatable, Sendable {
         resolution: PermissionResolution,
         at timestamp: Date = .now
     ) {
+        guard let session = sessionsByID[sessionID],
+              session.permissionRequests.count == 1,
+              let requestID = session.permissionRequests.first?.id else {
+            return
+        }
+        resolvePermission(sessionID: sessionID, requestID: requestID, resolution: resolution, at: timestamp)
+    }
+
+    public mutating func resolvePermission(
+        sessionID: String,
+        requestID: UUID,
+        resolution: PermissionResolution,
+        at timestamp: Date = .now
+    ) {
         guard var session = sessionsByID[sessionID] else {
             return
         }
 
-        session.permissionRequest = nil
+        guard let requestIndex = session.permissionRequests.firstIndex(where: { $0.id == requestID }) else {
+            return
+        }
+        session.permissionRequests.remove(at: requestIndex)
         session.updatedAt = timestamp
+
+        if let nextPermission = session.permissionRequests.first {
+            session.phase = .waitingForApproval
+            session.canonicalStatus = .waitingApproval
+            session.summary = nextPermission.summary
+            upsert(session)
+            return
+        }
+        if let nextQuestion = session.questionPrompts.first {
+            session.phase = .waitingForAnswer
+            session.canonicalStatus = .question
+            session.summary = nextQuestion.title
+            upsert(session)
+            return
+        }
 
         if resolution.isApproved {
             session.phase = .running
+            session.canonicalStatus = .working
             switch session.tool {
             case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
                 session.summary = "Permission approved. \(session.tool.displayName) continued the tool."
@@ -248,11 +377,12 @@ public struct SessionState: Equatable, Sendable {
             }
         } else {
             session.phase = .completed
+            session.canonicalStatus = .ended
             switch session.tool {
             case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
-                session.summary = "Permission denied in Open Island."
+                session.summary = "Permission denied in Orbit."
             case .openCode:
-                session.summary = "Permission denied in Open Island."
+                session.summary = "Permission denied in Orbit."
             default:
                 session.summary = "Permission denied. Review the session in the terminal."
             }
@@ -266,15 +396,44 @@ public struct SessionState: Equatable, Sendable {
         response: QuestionPromptResponse,
         at timestamp: Date = .now
     ) {
+        guard let session = sessionsByID[sessionID],
+              session.questionPrompts.count == 1,
+              let requestID = session.questionPrompts.first?.id else {
+            return
+        }
+        answerQuestion(sessionID: sessionID, requestID: requestID, response: response, at: timestamp)
+    }
+
+    public mutating func answerQuestion(
+        sessionID: String,
+        requestID: UUID,
+        response: QuestionPromptResponse,
+        at timestamp: Date = .now
+    ) {
         guard var session = sessionsByID[sessionID] else {
             return
         }
 
-        session.questionPrompt = nil
-        session.phase = .running
+        guard let promptIndex = session.questionPrompts.firstIndex(where: { $0.id == requestID }) else {
+            return
+        }
+        session.questionPrompts.remove(at: promptIndex)
         let summary = response.displaySummary
-        session.summary = summary.isEmpty ? "Answered the question." : "Answered: \(summary)"
         session.updatedAt = timestamp
+
+        if let nextPermission = session.permissionRequests.first {
+            session.phase = .waitingForApproval
+            session.canonicalStatus = .waitingApproval
+            session.summary = nextPermission.summary
+        } else if let nextQuestion = session.questionPrompts.first {
+            session.phase = .waitingForAnswer
+            session.canonicalStatus = .question
+            session.summary = nextQuestion.title
+        } else {
+            session.phase = .running
+            session.canonicalStatus = .working
+            session.summary = summary.isEmpty ? "Answered the question." : "Answered: \(summary)"
+        }
         upsert(session)
     }
 
@@ -392,6 +551,7 @@ public struct SessionState: Equatable, Sendable {
                     if session.processNotSeenCount >= 2 {
                         session.isSessionEnded = true
                         session.phase = .completed
+                        session.canonicalStatus = .ended
                         changed.insert(id)
                     }
                 }
@@ -421,9 +581,6 @@ public struct SessionState: Equatable, Sendable {
         return changed
     }
 
-    /// Remove sessions that are no longer visible in the island.
-    /// Returns `true` if any sessions were removed.
-    @discardableResult
     /// Manually mark a session as completed and ended.
     /// Intended for remote sessions whose SSH tunnel dropped without a
     /// SessionEnd hook.
@@ -431,16 +588,40 @@ public struct SessionState: Equatable, Sendable {
         guard var session = sessionsByID[id] else { return }
         session.isSessionEnded = true
         session.phase = .completed
+        session.canonicalStatus = .ended
         session.updatedAt = .now
         upsert(session)
     }
 
+    /// Remove sessions that are no longer visible in the island.
+    /// Returns `true` if any sessions were removed.
+    @discardableResult
     public mutating func removeInvisibleSessions() -> Bool {
         let before = sessionsByID.count
         sessionsByID = sessionsByID.filter { _, session in
             session.isVisibleInIsland
         }
         return sessionsByID.count != before
+    }
+
+    public mutating func replaceRuleStores(
+        silence: SilenceRuleStore,
+        admission: AdmissionRuleStore
+    ) {
+        silenceRuleStore = silence
+        admissionRuleStore = admission
+
+        for (id, var session) in sessionsByID {
+            guard admission.admits(launcherBundleID: session.launcherBundleID) else {
+                sessionsByID.removeValue(forKey: id)
+                continue
+            }
+            session.notificationsSilenced = silence.shouldSilence(
+                cwd: session.jumpTarget?.workingDirectory,
+                prompt: session.silencePromptContext
+            )
+            sessionsByID[id] = session
+        }
     }
 
     private mutating func upsert(_ session: AgentSession) {
